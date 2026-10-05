@@ -42,3 +42,8 @@ sysinfo.txt
 # Unity Hub / package cache artifacts
 *.apk
 *.unitypackage
+
+# dotnet test artifacts
+tests/bin/
+tests/obj/
+tests/.vs/
