@@ -20,6 +20,8 @@ namespace Solace.Core
         public SeededRandom LineageRng;
         /// <summary>Partitioned stream for colossi drift.</summary>
         public SeededRandom ColossusRng;
+        /// <summary>Partitioned stream for dream rolls (content derives from the seed).</summary>
+        public SeededRandom DreamRng;
 
         /// <summary>Game seconds advanced per real second.</summary>
         public float TimeScale = 60f;
@@ -44,6 +46,7 @@ namespace Solace.Core
             EventRng = new SeededRandom(state.Rng.Event);
             LineageRng = new SeededRandom(state.Rng.Lineage);
             ColossusRng = new SeededRandom(state.Rng.Colossus);
+            DreamRng = new SeededRandom(state.Rng.Dream);
             foreach (var e in state.Entities)
                 if (e.Id >= _nextEntityId) _nextEntityId = e.Id + 1;
             _prevHealth = state.Agent.Health;
@@ -69,6 +72,7 @@ namespace Solace.Core
             var ai = SeededRandom.Derive(seed, "ai");
             var ev = SeededRandom.Derive(seed, "event");
             var li = SeededRandom.Derive(seed, "lineage");
+            var dr = SeededRandom.Derive(seed, "dream");
 
             var state = new GameState();
             state.Seed = seed;
@@ -105,6 +109,7 @@ namespace Solace.Core
             state.Rng.Ai = ai.State;
             state.Rng.Event = ev.State;
             state.Rng.Lineage = li.State;
+            state.Rng.Dream = dr.State;
 
             var sim = new Simulation(state);
             sim.PlaceEcology();
@@ -240,6 +245,7 @@ namespace Solace.Core
             ColossusSystem.Tick(State, ColossusRng, h, Now, (t, text, cat, sal) =>
                 Journal(t, text, cat, sal));
             Brain.Tick(this, h);
+            DreamSystem.TickSleep(this);
             StepEntities(h);
             DiscoveryCheck();
             InjuryHook();
@@ -259,6 +265,7 @@ namespace Solace.Core
             State.Rng.Event = EventRng.State;
             State.Rng.Lineage = LineageRng.State;
             State.Rng.Colossus = ColossusRng.State;
+            State.Rng.Dream = DreamRng.State;
         }
 
         // -- subsystems -----------------------------------------------------------------
@@ -388,6 +395,8 @@ namespace Solace.Core
                     salience = 0.4f; break;
             }
             Journal(Now, line, JournalCategory.Discovery, salience, 1f, poi.Id);
+            // A discovered place may rhyme with a past dream — recognition.
+            DreamSystem.CheckRecognition(this, poi.Id);
             if (poi.Type == PoiType.InsectileRuin)
                 LineageSystem.MaybeDistillTale(this, "The Hollow Hive", "Caution", 0.04f,
                     "the first climb to the chitin arches");
@@ -428,6 +437,7 @@ namespace Solace.Core
             SaveSystem.KillAgent(State, cause);
             LineageRng = new SeededRandom(State.Rng.Lineage);
             ColossusRng = new SeededRandom(State.Rng.Colossus);
+            DreamRng = new SeededRandom(State.Rng.Dream);
         }
     }
 }

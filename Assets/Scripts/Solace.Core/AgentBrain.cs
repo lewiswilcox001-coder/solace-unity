@@ -210,6 +210,7 @@ namespace Solace.Core
         public List<int> TalesKnown = new List<int>(); // tale ids learned
         public bool VigorForeshadowed;      // old-age dimming has been journaled
         public float LastTaleToldAt = -9999f;
+        public float LastDreamRolledAt = -9999f; // last game-time a dream roll happened (rest gating)
 
         /// <summary>Life stage derived from age and lifespan.</summary>
         public LifeStage Stage { get { return LineageSystem.StageFor(Age, LifespanYears); } }
@@ -329,6 +330,7 @@ namespace Solace.Core
             o.Add("talesKnown", ta);
             o.Add("vigorForeshadowed", VigorForeshadowed);
             o.Add("lastTaleToldAt", LastTaleToldAt);
+            o.Add("lastDreamRolledAt", LastDreamRolledAt);
             o.Add("goal", CurrentGoal); o.Add("activity", CurrentActivity);
             o.Add("traits", Traits.ToJson());
             var ia = new JsonArray();
@@ -388,6 +390,7 @@ namespace Solace.Core
             }
             a.VigorForeshadowed = JsonHelpers.GetBool(o, "vigorForeshadowed", false);
             a.LastTaleToldAt = JsonHelpers.GetFloat(o, "lastTaleToldAt", -9999f);
+            a.LastDreamRolledAt = JsonHelpers.GetFloat(o, "lastDreamRolledAt", -9999f);
             a.CurrentGoal = JsonHelpers.GetString(o, "goal", "");
             a.CurrentActivity = JsonHelpers.GetString(o, "activity", "waking up");
             JsonValue tv;

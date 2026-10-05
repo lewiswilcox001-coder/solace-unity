@@ -15,6 +15,7 @@ namespace Solace.Core
         Weather,
         Travel,
         Reflection,
+        Dream,     // dreams and dream-recognitions: the mind shaping the world
         System,
         Chapter   // chapter boundaries of the multi-generational chronicle
     }

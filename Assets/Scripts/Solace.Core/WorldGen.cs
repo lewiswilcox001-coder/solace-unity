@@ -50,6 +50,7 @@ namespace Solace.Core
         public bool LearnedName;   // Solace knows its true name
         public int Stock;          // berry bushes: berries remaining
         public bool Looted;        // ruin sites / hive: already searched
+        public int DreamId = -1;   // dream that seeded this place (-1 = grew naturally)
 
         public string DisplayName
         {
@@ -83,6 +84,7 @@ namespace Solace.Core
             o.Add("learnedName", LearnedName);
             o.Add("stock", Stock);
             o.Add("looted", Looted);
+            o.Add("dreamId", DreamId);
             return o;
         }
 
@@ -105,6 +107,7 @@ namespace Solace.Core
             p.LearnedName = JsonHelpers.GetBool(o, "learnedName", false);
             p.Stock = JsonHelpers.GetInt(o, "stock", 0);
             p.Looted = JsonHelpers.GetBool(o, "looted", false);
+            p.DreamId = JsonHelpers.GetInt(o, "dreamId", -1);
             return p;
         }
     }

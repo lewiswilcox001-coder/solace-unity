@@ -29,6 +29,7 @@ namespace Solace.Core
         public uint Event;
         public uint Lineage;  // aging, sickness, kits, bonding, succession
         public uint Colossus; // colossi drift
+        public uint Dream;    // dream rolls (content itself derives from the seed)
 
         public JsonObject ToJson()
         {
@@ -37,6 +38,7 @@ namespace Solace.Core
             o.Add("event", Event);
             o.Add("lineage", Lineage);
             o.Add("colossus", Colossus);
+            o.Add("dream", Dream);
             return o;
         }
 
@@ -47,7 +49,8 @@ namespace Solace.Core
                 Ai = JsonHelpers.GetUInt(o, "ai", 0),
                 Event = JsonHelpers.GetUInt(o, "event", 0),
                 Lineage = JsonHelpers.GetUInt(o, "lineage", 0),
-                Colossus = JsonHelpers.GetUInt(o, "colossus", 0)
+                Colossus = JsonHelpers.GetUInt(o, "colossus", 0),
+                Dream = JsonHelpers.GetUInt(o, "dream", 0)
             };
         }
     }
@@ -142,6 +145,8 @@ namespace Solace.Core
         public ToolBudgetState ToolBudgets = new ToolBudgetState();
         /// <summary>Last arbitration trace, kept for legibility ("why did you…").</summary>
         public DecisionTrace LastDecision = new DecisionTrace();
+        /// <summary>Every dream ever dreamed — part of the multi-generational chronicle.</summary>
+        public DreamJournal Dreams = new DreamJournal();
         /// <summary>
         /// Leftover fractional game-time in the fixed-step accumulator.
         /// Serialized so save/load doesn't shift the step cadence.
@@ -186,6 +191,7 @@ namespace Solace.Core
             o.Add("social", Social.ToJson());
             o.Add("inventory", Inventory.ToJson());
             o.Add("companion", Companion.ToJson());
+            o.Add("dreams", Dreams.ToJson());
             o.Add("rng", Rng.ToJson());
             o.Add("toolBudgets", ToolBudgets.ToJson());
             o.Add("lastDecision", LastDecision.ToJson());
@@ -224,6 +230,9 @@ namespace Solace.Core
             s.Social = SocialMemory.FromJson(o["social"].AsObject());
             s.Inventory = Inventory.FromJson(o["inventory"].AsObject());
             s.Companion = CompanionState.FromJson(o["companion"].AsObject());
+            JsonValue drjv;
+            s.Dreams = o.TryGet("dreams", out drjv) && !drjv.IsNull
+                ? DreamJournal.FromJson(drjv.AsObject()) : new DreamJournal();
             s.Rng = RngStates.FromJson(o["rng"].AsObject());
             s.ToolBudgets = ToolBudgetState.FromJson(o["toolBudgets"].AsObject());
             JsonValue ldv;
