@@ -49,7 +49,7 @@ compile() { # name, outfile, refs..., -- files...
     info "compiling $name -> $outfile"
     # shellcheck disable=SC2086
     if $CSC -nologo -t:library -langversion:9.0 -nullable:disable \
-            -nowarn:1701,1702 -o:"$outfile" "$@" >"$OUT_DIR/$name.log" 2>&1; then
+            -nowarn:1701,1702 -out:"$outfile" "$@" >"$OUT_DIR/$name.log" 2>&1; then
         info "$name: OK"
     else
         echo "--- $name ERRORS ---"
@@ -72,6 +72,28 @@ else
     STUB_REF=""
 fi
 
+# --- 0b. Built-in uGUI package (com.unity.ugui): NOT a stub. ---
+# In Unity 6, UnityEngine.UI / UnityEngine.EventSystems ship as the built-in
+# com.unity.ugui package (source-only, always present in the editor install).
+# The real editor compiles that source automatically; this check does the same
+# so UGUI code is validated against the real API instead of stubs.
+UGUI_PKG="$EDITOR_DIR/Editor/Data/Resources/PackageManager/BuiltInPackages/com.unity.ugui"
+UIELEMENTS_DLL="$EDITOR_DIR/Editor/Data/Managed/UnityEngine/UnityEngine.UIElementsModule.dll"
+UGUI_DLL=""
+if [ -d "$UGUI_PKG/Runtime/UGUI" ]; then
+    UGUI_SRCS="$(find "$UGUI_PKG/Runtime/UGUI" "$UGUI_PKG/Runtime/InternalBridge" -name '*.cs' | sort)"
+    UGUI_REF=""
+    [ -f "$UIELEMENTS_DLL" ] && UGUI_REF="-r:$UIELEMENTS_DLL"
+    # shellcheck disable=SC2086
+    compile "UnityEngine.UI" "$OUT_DIR/UnityEngine.UI.dll" \
+        -r:"$UNITY_ENGINE_DLL" $UGUI_REF $STUB_REF -- $UGUI_SRCS
+    [ -f "$OUT_DIR/UnityEngine.UI.dll" ] && UGUI_DLL="$OUT_DIR/UnityEngine.UI.dll"
+else
+    info "WARNING: built-in com.unity.ugui package not found under $EDITOR_DIR; UGUI code cannot be validated"
+fi
+UI_REF=""
+[ -n "$UGUI_DLL" ] && UI_REF="-r:$UGUI_DLL"
+
 # --- 1. Solace.Core: pure .NET, zero Unity references (by design) ---
 CORE_SRCS="$(find "$PROJECT_DIR/Assets/Scripts/Solace.Core" -name '*.cs' | sort)"
 [ -n "$CORE_SRCS" ] || fail "no Core sources found"
@@ -88,7 +110,7 @@ UNITY_SRCS="$(find "$PROJECT_DIR/Assets/Scripts/Solace.Unity" -name '*.cs' -not 
 if [ -n "$UNITY_SRCS" ]; then
     # shellcheck disable=SC2086
     compile "Solace.Unity" "$OUT_DIR/Solace.Unity.dll" \
-        -r:"$UNITY_ENGINE_DLL" -r:"$CORE_DLL" $STUB_REF -- $UNITY_SRCS
+        -r:"$UNITY_ENGINE_DLL" -r:"$CORE_DLL" $STUB_REF $UI_REF -- $UNITY_SRCS
 else
     info "no Solace.Unity runtime sources yet (glue phase pending)"
 fi
@@ -100,7 +122,7 @@ if [ -n "$EDITOR_SRCS" ]; then
     EXTRA_REF=""; [ -f "$UNITY_DLL" ] && EXTRA_REF="-r:$UNITY_DLL"
     # shellcheck disable=SC2086
     compile "Editor" "$OUT_DIR/Solace.Editor.dll" \
-        -r:"$UNITY_ENGINE_DLL" -r:"$UNITY_EDITOR_DLL" -r:"$CORE_DLL" $EXTRA_REF $STUB_REF -- $EDITOR_SRCS
+        -r:"$UNITY_ENGINE_DLL" -r:"$UNITY_EDITOR_DLL" -r:"$CORE_DLL" $EXTRA_REF $STUB_REF $UI_REF -- $EDITOR_SRCS
 else
     info "no Editor sources yet"
 fi
