@@ -26,6 +26,15 @@ public static class Tests
         TestOfflineBounds();
         TestCompanionTruth();
         TestCompanionTools();
+        TestSuccession();
+        TestTaleCap();
+        TestKitLearning();
+        TestAging();
+        TestSickness();
+        TestBonding();
+        TestColossi();
+        TestLineageSaveRoundTrip();
+        TestOfflineLineageSafety();
         Console.WriteLine();
         Console.WriteLine("passed: " + _passed + ", failed: " + _failed);
         return _failed == 0 ? 0 : 1;
@@ -132,18 +141,18 @@ public static class Tests
         Check(differs, "different seed -> different world", "worlds identical across seeds");
 
         // Structural sanity: required POI kinds exist.
-        bool hamlet = false, broch = false, cairn = false, bush = false, overlook = false, campfire = false;
+        bool den = false, hive = false, cairn = false, bush = false, overlook = false, hollow = false;
         foreach (var p in w1.Pois)
         {
-            if (p.Type == PoiType.Hamlet) hamlet = true;
-            if (p.Type == PoiType.BrochRuin) broch = true;
+            if (p.Type == PoiType.Den) den = true;
+            if (p.Type == PoiType.InsectileRuin) hive = true;
             if (p.Type == PoiType.Cairn) cairn = true;
-            if (p.Type == PoiType.BerryBush && p.Stock > 0) bush = true;
+            if (p.Type == PoiType.GlowberryBush && p.Stock > 0) bush = true;
             if (p.Type == PoiType.Overlook) overlook = true;
-            if (p.Type == PoiType.Campfire) campfire = true;
+            if (p.Type == PoiType.EmberHollow) hollow = true;
             Check(!w1.IsWater(p.X, p.Z), "POI on dry land (" + p.Type + ")", "POI in water at " + p.X + "," + p.Z);
         }
-        Check(hamlet && broch && cairn && bush && overlook && campfire, "all POI kinds placed", "missing kinds");
+        Check(den && hive && cairn && bush && overlook && hollow, "all POI kinds placed", "missing kinds");
         Check(!w1.IsWater(w1.SpawnPoint.X, w1.SpawnPoint.Z), "spawn on dry land", "spawn in water");
     }
 
@@ -191,7 +200,7 @@ public static class Tests
         // Starving-ish agent next to a known berry bush, no threats around.
         PointOfInterest bush = null;
         foreach (var p in sim.State.World.Pois)
-            if (p.Type == PoiType.BerryBush && p.Stock > 0) { bush = p; break; }
+            if (p.Type == PoiType.GlowberryBush && p.Stock > 0) { bush = p; break; }
         Check(bush != null, "test setup: berry bush exists", "no bush placed");
         if (bush == null) return;
 
@@ -204,8 +213,8 @@ public static class Tests
         agent.Health = 100f;
         agent.Curiosity = 20f;
         agent.Influences.Clear();
-        sim.State.Entities.RemoveAll(e => e.Kind != EntityKind.Villager); // no animals/wolves
-        // Villagers far away so Greet can't compete.
+        sim.State.Entities.RemoveAll(e => e.Kind != EntityKind.Kindred); // no animals/predators
+        // Kindred far away so Greet can't compete.
         foreach (var e in sim.State.Entities) { e.X += 1000f; e.Z += 1000f; }
 
         var ctx = new BrainContext { Sim = sim, Ai = sim.AiRng, Ev = sim.EventRng, Now = sim.Now };
@@ -332,4 +341,381 @@ public static class Tests
         string unk = reg.Invoke(s, "nope", "");
         Check(unk.StartsWith("ERROR"), "unknown tool rejected", unk);
     }
+
+    // -- 10. Succession ------------------------------------------------------------
+
+    private static void TestSuccession()
+    {
+        Console.WriteLine("[succession]");
+        var sim = Simulation.NewLife(9001);
+        var a = sim.State.Agent;
+        string parentName = a.Name;
+
+        // Two kits; the second is eldest.
+        LineageSystem.BirthLitter(sim, 2, -1);
+        sim.State.Kits[0].Age = 0.4f; sim.State.Kits[0].Name = "KitA";
+        sim.State.Kits[1].Age = 1.1f; sim.State.Kits[1].Name = "KitB";
+        // A tale, and a discovered place the heir must keep knowing.
+        LineageSystem.MaybeDistillTale(sim, "The Hollow Hive", "Caution", 0.04f, "test origin");
+        a.KnownPoiIds.Add(424242);
+
+        sim.KillAgent("taken by a gloom-maw on the high fell");
+        var heir = sim.State.Agent;
+        Check(heir.IsProtagonist, "eldest kit becomes protagonist", "flag not passed");
+        Check(heir.Name == "KitB", "eldest kit inherits (got " + heir.Name + ")", "wrong heir");
+        Check(heir.Generation == 2, "heir generation = 2", "got " + heir.Generation);
+        Check(sim.State.Lineage.Generation == 2, "lineage generation = 2", "got " + sim.State.Lineage.Generation);
+        Check(heir.TalesKnown.Count > 0, "tales pass to heir", "TalesKnown empty");
+        Check(heir.Traits.Caution >= 0.089f, "tale applied as instinct nudge", "Caution=" + heir.Traits.Caution);
+        Check(heir.KnownPoiIds.Contains(424242), "POI discovery persists across succession", "lost");
+        Check(Math.Abs(heir.LightShade - a.LightShade) <= 0.061f, "light-shade inherited with slight variation",
+            "shade " + heir.LightShade + " vs " + a.LightShade);
+
+        bool closeEntry = false;
+        foreach (var e in sim.State.Journal.Entries)
+            if (e.Category == JournalCategory.Chapter && e.Text.Contains("Chapter 1 ends"))
+                closeEntry = true;
+        Check(closeEntry, "chapter-close journal entry", "missing");
+        Check(sim.State.Lineage.Chapters.Count == 1, "chapter recorded", "count=" + sim.State.Lineage.Chapters.Count);
+        Check(sim.State.Kits.Count == 1, "heir removed from kits; sibling remains", "count=" + sim.State.Kits.Count);
+
+        // No living kit: a young distant kin arrives, honestly journaled.
+        var sim2 = Simulation.NewLife(9002);
+        sim2.KillAgent("dimmed the way evening dims, old and full of tales");
+        var heir2 = sim2.State.Agent;
+        Check(heir2.Generation == 2, "distant kin: generation = 2", "got " + heir2.Generation);
+        Check(heir2.IsProtagonist, "distant kin: becomes protagonist", "flag not passed");
+        bool kinLine = false;
+        foreach (var e in sim2.State.Journal.Entries)
+            if (e.Text.Contains("young kin came down from the high fells")) kinLine = true;
+        Check(kinLine, "distant kin arrival journaled honestly", "missing line");
+        bool oldClose = false;
+        foreach (var e in sim2.State.Journal.Entries)
+            if (e.Category == JournalCategory.Chapter && e.Text.Contains("old and full of tales")) oldClose = true;
+        Check(oldClose, "peaceful old-age chapter close", "missing");
+    }
+
+    // -- 11. Kit learning ------------------------------------------------------------
+
+    private static void TestKitLearning()
+    {
+        Console.WriteLine("[kits]");
+        var sim = Simulation.NewLife(9101);
+        var a = sim.State.Agent;
+        LineageSystem.BirthLitter(sim, 1, -1);
+        var kit = sim.State.Kits[0];
+
+        // Kit AT the parent while the parent eats: fed, learns Forage, no
+        // energy wasted oscillating.
+        kit.X = a.X; kit.Z = a.Z;
+        a.CurrentGoal = "Eat";
+        float forage0 = kit.Forage;
+        float hunger0 = kit.Hunger;
+        for (int i = 0; i < 20; i++) KitBrain.Tick(sim, kit, 60f);
+        Check(kit.IsAlive, "kit survives being fed", "died");
+        Check(kit.Forage > forage0, "kit near eating parent gains Forage", "Forage=" + kit.Forage);
+        Check(kit.Hunger < hunger0, "kit is fed while parent eats", "Hunger=" + kit.Hunger);
+        Check(kit.State == "Eat", "kit state = Eat while parent eats (got " + kit.State + ")", "wrong state");
+
+        // Kit follows a nearby parent (fresh stats so hunger can't confound).
+        a.CurrentGoal = "Explore";
+        kit.X = a.X + 12f; kit.Z = a.Z;
+        kit.Energy = 100f; kit.Hunger = 20f; kit.Health = 100f;
+        float d0 = V2.Distance(kit.Pos, a.Pos);
+        KitBrain.Tick(sim, kit, 5f);
+        Check(kit.State == "Follow", "kit follows a close parent (got " + kit.State + ")", "wrong state");
+        for (int i = 0; i < 20; i++) KitBrain.Tick(sim, kit, 5f);
+        float d1 = V2.Distance(kit.Pos, a.Pos);
+        Check(d1 < d0, "kit closes distance to the parent", d0.ToString("F1") + " -> " + d1.ToString("F1"));
+
+        // Kit hides when a gloom-maw is near.
+        kit.Energy = 100f; kit.Hunger = 20f; kit.Health = 100f;
+        sim.State.Entities.Add(new EntityState
+        {
+            Id = 9991, Kind = EntityKind.Predator, Name = "gloom-maw",
+            X = kit.X + 5f, Z = kit.Z, Health = 100f, Behavior = "Hunt"
+        });
+        KitBrain.Tick(sim, kit, 5f);
+        Check(kit.State == "Hide", "kit hides near a predator (got " + kit.State + ")", "no hide");
+
+        // A starving kit weakens (but the test keeps it short of death).
+        kit.Energy = 100f; kit.Hunger = 95f; kit.Health = 80f;
+        for (int i = 0; i < 3; i++) KitBrain.Tick(sim, kit, 60f);
+        Check(kit.IsAlive && kit.Health < 80f, "starving kit weakens", "Health=" + kit.Health);
+    }
+
+    private static void TestTaleCap()
+    {
+        Console.WriteLine("[tales]");
+        var sim = Simulation.NewLife(9801);
+        for (int i = 0; i < 15; i++)
+            LineageSystem.MaybeDistillTale(sim, "Tale " + i, "Caution", 0.01f, "test " + i);
+        int n = sim.State.Lineage.TalesThisGeneration(sim.State.Lineage.Generation);
+        Check(n <= 12, "tales capped at 12 per generation (got " + n + ")", "cap exceeded");
+        // Same title twice in a generation distills only once.
+        LineageSystem.MaybeDistillTale(sim, "Tale 0", "Caution", 0.01f, "dup");
+        int n2 = sim.State.Lineage.TalesThisGeneration(sim.State.Lineage.Generation);
+        Check(n2 == n, "duplicate titles not re-distilled", n + " -> " + n2);
+    }
+
+    // -- 12. Aging -------------------------------------------------------------------
+
+    private static void TestAging()
+    {
+        Console.WriteLine("[aging]");
+        var sim = Simulation.NewLife(9201);
+        var a = sim.State.Agent;
+        a.LifespanYears = 16f;
+
+        a.Age = 4f;
+        Check(a.Stage == LifeStage.Adult, "adult stage at 4 years", "got " + a.Stage);
+        Check(a.MaxEnergy == 100f && a.MaxSpeedFactor == 1f, "adult at full vigor", a.MaxEnergy + "/" + a.MaxSpeedFactor);
+
+        a.Age = 0.5f;
+        Check(a.Stage == LifeStage.Kit, "kit stage under 1 year", "got " + a.Stage);
+        Check(a.MaxSpeedFactor < 1f, "kits slower than adults", "factor=" + a.MaxSpeedFactor);
+
+        a.Age = 13f; // past 65% of 16 = 10.4
+        Check(a.Stage == LifeStage.Elder, "elder stage past 65% lifespan", "got " + a.Stage);
+        Check(a.MaxEnergy < 100f, "elder max light declines", "MaxEnergy=" + a.MaxEnergy);
+        Check(a.MaxSpeedFactor < 1f, "elder slower", "factor=" + a.MaxSpeedFactor);
+
+        // Foreshadowing: the dimming is never sudden.
+        a.Age = 16f * 0.93f;
+        a.VigorForeshadowed = false;
+        LineageSystem.TickAging(sim, 3600f);
+        Check(a.VigorForeshadowed, "vigor decline foreshadowed at 93% lifespan", "not flagged");
+        bool fore = false;
+        foreach (var e in sim.State.Journal.Entries)
+            if (e.Text.Contains("my light thinning")) fore = true;
+        Check(fore, "foreshadowing journaled", "missing");
+
+        // Past lifespan, the daily chance eventually lands — peacefully.
+        a.Age = 17.5f;
+        a.VigorForeshadowed = true;
+        int guard = 0;
+        while (a.IsAlive && guard++ < 400) LineageSystem.TickAging(sim, 86400f); // up to 400 game-days
+        Check(!a.IsAlive, "old age eventually dims the light", "still alive after 400 days");
+        Check(sim.State.Lineage.Generation == 2, "old-age death still succeeds the line", "gen=" + sim.State.Lineage.Generation);
+    }
+
+    // -- 13. Sickness ----------------------------------------------------------------
+
+    private static void TestSickness()
+    {
+        Console.WriteLine("[sickness]");
+        // Untreated severity-1 dim-cough can kill.
+        var sim = Simulation.NewLife(9301);
+        var a = sim.State.Agent;
+        a.Sickness = SicknessKind.DimCough;
+        a.SicknessSeverity = 1f;
+        a.Hunger = 90f; // starving, not resting: no cure
+        a.CurrentGoal = "Explore";
+        float glowBefore = a.Glow;
+        for (int i = 0; i < 12; i++) LineageSystem.TickSickness(sim, 3600f); // 12 game-hours
+        Check(!a.IsAlive || a.Health < 100f, "severe untreated sickness harms", "Health=" + a.Health);
+        for (int i = 0; i < 60 && a.IsAlive; i++) LineageSystem.TickSickness(sim, 3600f);
+        Check(!a.IsAlive, "untreated severity-1 sickness can kill", "survived");
+        bool cause = false;
+        foreach (var e in sim.State.Journal.Entries)
+            if (e.Text.Contains("dimmed of the dim-cough")) cause = true;
+        Check(cause, "sickness death logged with cause", "missing");
+
+        // Rest + food cures slowly.
+        var sim2 = Simulation.NewLife(9302);
+        var b = sim2.State.Agent;
+        b.Sickness = SicknessKind.LightFever;
+        b.SicknessSeverity = 0.5f;
+        b.Hunger = 30f;
+        b.CurrentGoal = "Rest";
+        float sev0 = b.SicknessSeverity;
+        for (int i = 0; i < 5; i++) LineageSystem.TickSickness(sim2, 3600f);
+        Check(b.SicknessSeverity < sev0, "rest + food cures sickness", sev0 + " -> " + b.SicknessSeverity);
+
+        // Glow dims with sickness: the readable signal.
+        var sim3 = Simulation.NewLife(9303);
+        var c = sim3.State.Agent;
+        c.Energy = 90f; c.Health = 90f;
+        c.Sickness = SicknessKind.None; c.SicknessSeverity = 0f;
+        float well = c.Glow;
+        c.Sickness = SicknessKind.DimCough; c.SicknessSeverity = 0.8f;
+        float sick = c.Glow;
+        Check(sick < well, "sickness dims the glow (" + well.ToString("F2") + " -> " + sick.ToString("F2") + ")", "not dimmed");
+        Check(c.Glow >= 0f && c.Glow <= 1f, "glow stays in 0..1", "Glow=" + c.Glow);
+
+        // Contraction near a sick kindred (probabilistic; generous horizon).
+        var sim4 = Simulation.NewLife(9304);
+        var d = sim4.State.Agent;
+        d.Health = 30f; // weak
+        sim4.State.Weather = Weather.Rain;
+        sim4.State.Entities.Add(new EntityState
+        {
+            Id = 9992, Kind = EntityKind.Kindred, Name = "Moth",
+            X = d.X + 4f, Z = d.Z, Health = 100f, Behavior = "Wander",
+            Sickness = SicknessKind.DimCough, SicknessSeverity = 0.4f
+        });
+        int days = 0;
+        while (d.Sickness == SicknessKind.None && days++ < 200)
+            LineageSystem.TickSickness(sim4, 86400f);
+        Check(d.Sickness != SicknessKind.None, "sickness contracts near sick kindred in bad weather", "never contracted");
+    }
+
+    // -- 14. Bonding -----------------------------------------------------------------
+
+    private static void TestBonding()
+    {
+        Console.WriteLine("[bonding]");
+        var sim = Simulation.NewLife(9401);
+        var a = sim.State.Agent;
+        a.Age = 4f; // adult
+
+        EntityState kindred = null;
+        foreach (var e in sim.State.Entities)
+            if (e.Kind == EntityKind.Kindred) { kindred = e; break; }
+        Check(kindred != null, "test setup: kindred exists", "none");
+        if (kindred == null) return;
+        kindred.X = a.X + 2f; kindred.Z = a.Z;
+        a.TargetEntityId = kindred.Id;
+        var rec = sim.State.Social.GetPerson(kindred.Id);
+        rec.Trust = 0.9f; // trusted
+
+        var ctx = new BrainContext { Sim = sim, Ai = sim.AiRng, Ev = sim.EventRng, Now = sim.Now };
+        var greet = new GreetKindredAction();
+        for (int i = 0; i < 9; i++) greet.Update(ctx, 0.1f); // repeated greetings
+        Check(a.Bond != null && a.Bond.PartnerId == kindred.Id, "repeated greetings form a bond", "no bond");
+        Check(a.Bond.Strength > 0.7f, "bond strengthens past 0.7 (" + a.Bond.Strength.ToString("F2") + ")", "weak");
+        bool bonded = false;
+        foreach (var e in sim.State.Journal.Entries)
+            if (e.Text.Contains("Something has changed between me and")) bonded = true;
+        Check(bonded, "bond crossing journaled", "missing");
+
+        // After time, a strong adult bond ripens into kits at the den.
+        a.Bond.SinceStrongAt = 1f; // long ago (<=0 would reset to now)
+        sim.State.ElapsedSeconds = 3f * 86400f + 1f;
+        int kits0 = sim.State.Kits.Count;
+        LineageSystem.TickBonding(sim);
+        Check(sim.State.Kits.Count > kits0, "kits born from a strong bond", "none born");
+        Check(sim.State.Kits.Count - kits0 >= 1 && sim.State.Kits.Count - kits0 <= 3, "litter of 1-3 kits",
+            "got " + (sim.State.Kits.Count - kits0));
+        Check(a.Bond.LitterBorn, "bond marked as having borne a litter", "flag unset");
+        bool celebrated = false;
+        foreach (var e in sim.State.Journal.Entries)
+            if (e.Text.Contains("tumbled out of the den")) celebrated = true;
+        Check(celebrated, "birth celebrated in the journal", "missing");
+    }
+
+    // -- 15. Colossi -----------------------------------------------------------------
+
+    private static void TestColossi()
+    {
+        Console.WriteLine("[colossi]");
+        var sim = Simulation.NewLife(9501);
+        var col = sim.State.World.Colossi;
+        Check(col.Count == 4, "four colossi placed (got " + col.Count + ")", "wrong count");
+        int walkers = 0, isles = 0;
+        foreach (var c in col)
+        {
+            if (c.Kind == ColossusKind.TreeWalker) walkers++;
+            if (c.Kind == ColossusKind.SeedIsle) isles++;
+        }
+        Check(walkers == 2 && isles == 2, "two tree-walkers, two seed-isles", walkers + "/" + isles);
+
+        // Drift over sim-days moves them (very slowly, but measurably).
+        float x0 = col[0].X, z0 = col[0].Z;
+        var rng = new SeededRandom(sim.State.Rng.Colossus);
+        ColossusSystem.DriftQuietly(sim.State, rng, 3f * 86400f);
+        Check(col[0].X != x0 || col[0].Z != z0, "colossi drift over days", "unmoved");
+
+        // Deterministic: same seed, same drift.
+        var simB = Simulation.NewLife(9501);
+        var rngB = new SeededRandom(simB.State.Rng.Colossus);
+        ColossusSystem.DriftQuietly(simB.State, rngB, 3f * 86400f);
+        Check(Math.Abs(simB.State.World.Colossi[0].X - col[0].X) < 0.001f, "colossus drift deterministic", "diverged");
+
+        // A near colossus is journaled (at most every 2 days).
+        var sim2 = Simulation.NewLife(9502);
+        var near = sim2.State.World.Colossi[0];
+        near.X = sim2.State.Agent.X + 50f; near.Z = sim2.State.Agent.Z;
+        near.LastNotedAt = -999999f;
+        int journaled = 0;
+        ColossusSystem.Tick(sim2.State, new SeededRandom(5u), 3600f, sim2.Now,
+            (t, text, cat, sal) => { journaled++; });
+        Check(journaled == 1, "near colossus journaled", "got " + journaled);
+        ColossusSystem.Tick(sim2.State, new SeededRandom(5u), 3600f, sim2.Now + 3600f,
+            (t, text, cat, sal) => { journaled++; });
+        Check(journaled == 1, "colossus note throttled to every 2 days", "got " + journaled);
+    }
+
+    // -- 16. Lineage save round-trip --------------------------------------------------
+
+    private static void TestLineageSaveRoundTrip()
+    {
+        Console.WriteLine("[lineage-save]");
+        var sim = Simulation.NewLife(9601);
+        var a = sim.State.Agent;
+        LineageSystem.BirthLitter(sim, 2, -1);
+        sim.State.Kits[0].Forage = 0.4f;
+        LineageSystem.MaybeDistillTale(sim, "The Hollow Hive", "Caution", 0.04f, "test");
+        a.Bond = new Bond { PartnerId = 7, Strength = 0.8f, SinceStrongAt = 100f };
+        // Round-trip while the bonded generation-1 agent still lives.
+        string json1 = SaveSystem.Save(sim.State);
+        GameState loaded = SaveSystem.Load(json1);
+        Check(loaded.Lineage.Generation == 1, "generation survives save/load", "got " + loaded.Lineage.Generation);
+        Check(loaded.Kits.Count == 2, "kits survive save/load", "lost kits");
+        Check(Math.Abs(loaded.Kits[0].Forage - 0.4f) < 0.001f, "kit learning survives save/load", "lost skills");
+        Check(loaded.Agent.TalesKnown.Count > 0, "tales survive save/load", "lost tales");
+        Check(loaded.Agent.Bond != null && loaded.Agent.Bond.Strength > 0.7f, "bond survives save/load", "lost bond");
+        Check(loaded.World.Colossi.Count == 4, "colossi survive save/load", "lost colossi");
+        // Succession, then round-trip the new generation.
+        sim.KillAgent("dimmed the way evening dims, old and full of tales"); // -> generation 2
+        string json2 = SaveSystem.Save(sim.State);
+        GameState loaded2 = SaveSystem.Load(json2);
+        Check(loaded2.Lineage.Generation == 2, "generation 2 survives save/load", "got " + loaded2.Lineage.Generation);
+        Check(loaded2.Lineage.Chapters.Count == 1, "chapters survive save/load", "lost chapters");
+        Check(loaded2.Agent.Bond == null, "heir starts unbonded (bond does not transfer)", "bond leaked");
+        string json3 = SaveSystem.Save(loaded2);
+        Check(json2 == json3, "lineage save->load->save byte-identical", "diverged");
+        var simB = new Simulation(loaded2);
+        simB.Step(2f);
+        Check(simB.State.Agent.IsAlive, "generation 2 continues living after load", "dead");
+    }
+
+    // -- 17. Offline lineage safety ---------------------------------------------------
+
+    private static void TestOfflineLineageSafety()
+    {
+        Console.WriteLine("[offline-lineage]");
+        // An old agent left alone does not die of old age unfairly.
+        var sim = Simulation.NewLife(9701);
+        var a = sim.State.Agent;
+        a.Age = a.LifespanYears - 0.01f;
+        a.VigorForeshadowed = false;
+        SaveSystem.ApplyOfflineProgress(sim.State, TimeSpan.FromDays(7), OfflineMode.QuietLife);
+        Check(a.IsAlive, "offline aging never kills unfairly", "died while away");
+        Check(a.Age <= a.LifespanYears, "offline age clamped at lifespan", "Age=" + a.Age);
+        Check(a.VigorForeshadowed, "away aging foreshadows the dimming", "not flagged");
+
+        // Kits are bounded while away: hungry but never starved to death.
+        LineageSystem.BirthLitter(sim, 2, -1);
+        foreach (var k in sim.State.Kits) { k.Hunger = 80f; k.Health = 60f; }
+        SaveSystem.ApplyOfflineProgress(sim.State, TimeSpan.FromDays(7), OfflineMode.QuietLife);
+        bool kitsOk = true;
+        foreach (var k in sim.State.Kits)
+            if (!k.IsAlive || k.Hunger > 85.5f || k.Health < 34f) kitsOk = false;
+        Check(kitsOk, "offline kits bounded (hunger<=85, health floor)", "a kit suffered");
+
+        // Sickness never kills while away.
+        a.Sickness = SicknessKind.DimCough;
+        a.SicknessSeverity = 0.9f;
+        SaveSystem.ApplyOfflineProgress(sim.State, TimeSpan.FromDays(7), OfflineMode.QuietLife);
+        Check(a.IsAlive, "offline sickness never kills", "died while away");
+        Check(a.SicknessSeverity < 0.9f, "away sickness eases", "severity=" + a.SicknessSeverity);
+
+        // Colossi drift while away.
+        var sim2 = Simulation.NewLife(9702);
+        float cx = sim2.State.World.Colossi[0].X;
+        SaveSystem.ApplyOfflineProgress(sim2.State, TimeSpan.FromDays(3), OfflineMode.QuietLife);
+        Check(sim2.State.World.Colossi[0].X != cx, "colossi drift during away time", "unmoved");
+    }
+
 }

@@ -16,6 +16,10 @@ namespace Solace.Core
         public AgentBrain Brain;
         public SeededRandom AiRng;
         public SeededRandom EventRng;
+        /// <summary>Partitioned stream for aging, sickness, kits, bonding, succession.</summary>
+        public SeededRandom LineageRng;
+        /// <summary>Partitioned stream for colossi drift.</summary>
+        public SeededRandom ColossusRng;
 
         /// <summary>Game seconds advanced per real second.</summary>
         public float TimeScale = 60f;
@@ -27,8 +31,10 @@ namespace Solace.Core
         private float _lastCheckpointAt = -9999f;
         private float _prevHealth = 100f;
 
-        private static readonly string[] VillagerNames =
-            { "Mira", "Tam", "Elspeth", "Donal", "Ailsa", "Fergus", "Nessa" };
+        private static readonly string[] KindredNames =
+            { "Vesper", "Tallow", "Ember", "Moth", "Sable", "Lumen", "Ash", "Wick" };
+        private static readonly string[] KitNames =
+            { "Vesper", "Tallow", "Ember", "Moth", "Sable", "Lumen", "Ash", "Wick" };
 
         public Simulation(GameState state)
         {
@@ -36,6 +42,8 @@ namespace Solace.Core
             Brain = new AgentBrain();
             AiRng = new SeededRandom(state.Rng.Ai);
             EventRng = new SeededRandom(state.Rng.Event);
+            LineageRng = new SeededRandom(state.Rng.Lineage);
+            ColossusRng = new SeededRandom(state.Rng.Colossus);
             foreach (var e in state.Entities)
                 if (e.Id >= _nextEntityId) _nextEntityId = e.Id + 1;
             _prevHealth = state.Agent.Health;
@@ -60,6 +68,7 @@ namespace Solace.Core
             var world = WorldGenerator.Generate(new WorldConfig { Seed = seed });
             var ai = SeededRandom.Derive(seed, "ai");
             var ev = SeededRandom.Derive(seed, "event");
+            var li = SeededRandom.Derive(seed, "lineage");
 
             var state = new GameState();
             state.Seed = seed;
@@ -75,21 +84,37 @@ namespace Solace.Core
             agent.CurrentGoal = "";
             agent.CurrentActivity = "waking up";
             foreach (var poi in world.Pois)
-                if (poi.Type == PoiType.Hamlet || poi.Type == PoiType.Campfire)
+                if (poi.Type == PoiType.Den || poi.Type == PoiType.EmberHollow)
                     agent.KnownPoiIds.Add(poi.Id);
+
+            // Lineage seed: a fresh first generation, young adult, light-shade
+            // from the lineage stream, lifespan 14-20 game-years.
+            agent.Name = li.Pick(KindredNames);
+            agent.IsProtagonist = true;
+            agent.Generation = 1;
+            agent.Age = li.NextFloat(2f, 3.5f);
+            agent.LightShade = li.NextFloat();
+            agent.LifespanYears = li.NextFloat(14f, 20f);
+            agent.Energy = 100f;
             state.Agent = agent;
+
+            state.Lineage.Generation = 1;
+            state.Lineage.ProtagonistId = 0; // agent id 0 = the protagonist
+            state.Lineage.ChapterStartTime = 0f;
 
             state.Rng.Ai = ai.State;
             state.Rng.Event = ev.State;
+            state.Rng.Lineage = li.State;
 
             var sim = new Simulation(state);
             sim.PlaceEcology();
 
             state.Journal.Add(0f,
-                "I woke on the heather above " + world.HamletName + " as the mist lifted. " +
-                "A new life, and " + world.ValleyName + " waiting to be learned.",
-                JournalCategory.Reflection, 0.8f);
-            state.Beliefs.AddOrUpdate("home.hamlet", world.HamletName + " is home", "saw", 1f, 0f);
+                "I woke on the mistmoor above " + world.DenName + " as the mist lifted, " +
+                "my chest-light burning steady. A new life in " + world.ValleyName + ", " +
+                "waiting to be learned.",
+                JournalCategory.Chapter, 0.8f);
+            state.Beliefs.AddOrUpdate("home.den", world.DenName + " is home", "saw", 1f, 0f);
 
             sim.SyncRng();
             return sim;
@@ -99,25 +124,25 @@ namespace Solace.Core
         {
             var world = State.World;
             var ev = EventRng;
-            PointOfInterest hamlet = null;
+            PointOfInterest den = null;
             foreach (var p in world.Pois)
-                if (p.Type == PoiType.Hamlet) hamlet = p;
+                if (p.Type == PoiType.Den) den = p;
 
-            // Villagers: a small cast with names, keeping near home.
-            var names = new List<string>(VillagerNames);
+            // Kindred: a small cast with names, keeping near home.
+            var names = new List<string>(KindredNames);
             ev.Shuffle(names);
-            int villagers = Math.Min(5, names.Count);
-            for (int i = 0; i < villagers; i++)
+            int kindred = Math.Min(5, names.Count);
+            for (int i = 0; i < kindred; i++)
             {
-                V2 spot = RandomLandNear(ev, hamlet.X, hamlet.Z, 8f, 26f, 0f, 20f);
+                V2 spot = RandomLandNear(ev, den.X, den.Z, 8f, 26f, 0f, 20f);
                 AddEntity(new EntityState
                 {
-                    Kind = EntityKind.Villager,
+                    Kind = EntityKind.Kindred,
                     Name = names[i],
                     X = spot.X, Z = spot.Z,
                     Health = 100f,
                     Behavior = "Wander",
-                    HomeX = hamlet.X, HomeZ = hamlet.Z,
+                    HomeX = den.X, HomeZ = den.Z,
                     TargetX = spot.X, TargetZ = spot.Z
                 });
                 State.Social.Meet(State.Entities[State.Entities.Count - 1].Id, names[i], 0f);
@@ -138,7 +163,7 @@ namespace Solace.Core
             // Rabbits everywhere low.
             for (int i = 0; i < 8; i++)
             {
-                V2 spot = RandomLandNear(ev, hamlet.X, hamlet.Z, 20f, 180f, 2f, 24f);
+                V2 spot = RandomLandNear(ev, den.X, den.Z, 20f, 180f, 2f, 24f);
                 AddEntity(new EntityState
                 {
                     Kind = EntityKind.Rabbit, Name = "hare",
@@ -147,13 +172,13 @@ namespace Solace.Core
                 });
             }
 
-            // Wolves: far from the hamlet, up in the woods and crags.
+            // Gloom-maws: far from the den, up in the woods and crags.
             for (int i = 0; i < 3; i++)
             {
-                V2 spot = RandomLandNear(ev, hamlet.X, hamlet.Z, 160f, 260f, 10f, 45f);
+                V2 spot = RandomLandNear(ev, den.X, den.Z, 160f, 260f, 10f, 45f);
                 AddEntity(new EntityState
                 {
-                    Kind = EntityKind.Wolf, Name = "wolf",
+                    Kind = EntityKind.Predator, Name = "gloom-maw",
                     X = spot.X, Z = spot.Z, Health = 100f, Behavior = "Roam",
                     HomeX = spot.X, HomeZ = spot.Z, Hunger = 45f,
                     TargetX = spot.X, TargetZ = spot.Z
@@ -208,6 +233,12 @@ namespace Solace.Core
             State.ElapsedSeconds += h;
 
             WeatherDrift();
+            LineageSystem.TickAging(this, h);
+            LineageSystem.TickSickness(this, h);
+            LineageSystem.TickBonding(this);
+            StepKits(h);
+            ColossusSystem.Tick(State, ColossusRng, h, Now, (t, text, cat, sal) =>
+                Journal(t, text, cat, sal));
             Brain.Tick(this, h);
             StepEntities(h);
             DiscoveryCheck();
@@ -226,6 +257,8 @@ namespace Solace.Core
         {
             State.Rng.Ai = AiRng.State;
             State.Rng.Event = EventRng.State;
+            State.Rng.Lineage = LineageRng.State;
+            State.Rng.Colossus = ColossusRng.State;
         }
 
         // -- subsystems -----------------------------------------------------------------
@@ -240,14 +273,14 @@ namespace Solace.Core
             switch (next)
             {
                 case Weather.Rain:
-                    Journal(Now, "Rain begins to fall over the glen.", JournalCategory.Weather, 0.3f);
+                    Journal(Now, "Rain begins to fall over the vale.", JournalCategory.Weather, 0.3f);
                     break;
                 case Weather.Storm:
                     Journal(Now, "A storm is coming down off the tops. I should think about shelter.", JournalCategory.Weather, 0.5f);
                     break;
                 case Weather.Clear:
                     if (EventRng.NextFloat() < 0.4f)
-                        Journal(Now, "The cloud broke and the glen filled with light.", JournalCategory.Weather, 0.25f);
+                        Journal(Now, "The cloud broke and the vale filled with light.", JournalCategory.Weather, 0.25f);
                     break;
             }
         }
@@ -259,20 +292,21 @@ namespace Solace.Core
                 World = State.World,
                 Agent = State.Agent,
                 Entities = State.Entities,
+                Kits = State.Kits,
                 Now = Now,
                 Rng = EventRng
             };
             foreach (var e in State.Entities)
                 EntityBehaviors.Step(e, ctx, h);
 
-            // Wolf bites on the agent surface here as journaled injuries.
+            // Predator bites on the agent surface here as journaled injuries.
             foreach (var line in ctx.EventLog)
             {
                 if (line.StartsWith("bite:"))
                 {
                     float dmg = float.Parse(line.Substring(5),
                         System.Globalization.CultureInfo.InvariantCulture);
-                    Journal(Now, "A wolf got its teeth into me (" + dmg.ToString("F0") + "). I need to get away.",
+                    Journal(Now, "A gloom-maw got its teeth into me (" + dmg.ToString("F0") + "). I need to get away.",
                         JournalCategory.Combat, 0.7f);
                     State.Agent.Traits.Nudge("Caution", 0.01f);
                 }
@@ -280,6 +314,27 @@ namespace Solace.Core
                 {
                     Journal(Now, line.Substring(5), JournalCategory.Travel, 0.45f);
                 }
+                else if (line.StartsWith("kitkill:"))
+                {
+                    Journal(Now, line.Substring(8), JournalCategory.Social, 0.95f);
+                    State.Agent.Mood = MathX.Clamp(State.Agent.Mood - 15f, 0f, 100f);
+                }
+            }
+        }
+
+        private void StepKits(float h)
+        {
+            var a = State.Agent;
+            if (!a.IsAlive) return;
+            foreach (var kit in State.Kits)
+                KitBrain.Tick(this, kit, h);
+            // Kits that reach age 3 join the den as kindred (eldest first).
+            for (int i = State.Kits.Count - 1; i >= 0; i--)
+            {
+                var kit = State.Kits[i];
+                if (!kit.IsAlive) continue;
+                if (kit.Age >= 3f)
+                    LineageSystem.KitToKindred(this, kit);
             }
         }
 
@@ -308,30 +363,37 @@ namespace Solace.Core
             float salience;
             switch (poi.Type)
             {
-                case PoiType.BrochRuin:
+                case PoiType.InsectileRuin:
                     // Name unknown until learned — use DisplayName-safe wording.
-                    line = "I climbed to the old tower on the fell. No one living built this place.";
+                    line = "I climbed to the hollow hive on the fell. Chitin arches, empty as sky. " +
+                           "Something built here long before my kind, and left nothing but shape.";
                     salience = 0.9f; break;
                 case PoiType.RuinSite:
-                    line = "I found " + poi.DisplayName + ". Old stones, older stories.";
+                    line = "I found " + poi.DisplayName + ". Old husks of a story, older than stories.";
                     salience = 0.75f; break;
                 case PoiType.Overlook:
-                    line = "I climbed until the whole glen lay below me — river, loch, hamlet, and all.";
+                    line = "I climbed until the whole vale lay below me — river, loch, den, and all.";
                     salience = 0.6f; break;
                 case PoiType.Cairn:
-                    line = "I reached the fork cairn. Travellers have been adding stones here for years.";
+                    line = "I reached the fork cairn. My kind have been adding stones here for years.";
                     salience = 0.4f; break;
-                case PoiType.Campfire:
-                    line = "I found a sheltered campfire site — " + poi.Name + ". A good place to rest.";
+                case PoiType.EmberHollow:
+                    line = "I found a sheltered ember-hollow — " + poi.Name + ". Warm glow-moss. A good place to rest.";
                     salience = 0.4f; break;
-                case PoiType.BerryBush:
-                    line = "I found a berry bush, heavy with fruit.";
+                case PoiType.GlowberryBush:
+                    line = "I found a glowberry bush, the berries lit faintly from within.";
                     salience = 0.3f; break;
                 default:
                     line = "I discovered " + poi.DisplayName + ".";
                     salience = 0.4f; break;
             }
             Journal(Now, line, JournalCategory.Discovery, salience, 1f, poi.Id);
+            if (poi.Type == PoiType.InsectileRuin)
+                LineageSystem.MaybeDistillTale(this, "The Hollow Hive", "Caution", 0.04f,
+                    "the first climb to the chitin arches");
+            else if (salience >= 0.75f)
+                LineageSystem.MaybeDistillTale(this, "The First " + poi.DisplayName, "Curiosity", 0.03f,
+                    "the first time I saw " + poi.DisplayName);
             State.Beliefs.AddOrUpdate("poi." + poi.Id + ".seen",
                 "I have seen " + poi.DisplayName, "saw", 1f, Now);
             State.Agent.Mood = MathX.Clamp(State.Agent.Mood + 4f, 0f, 100f);
@@ -355,12 +417,17 @@ namespace Solace.Core
                             float salience, float certainty = 1f,
                             int? placeId = null, int? personId = null, string source = "self")
         {
-            State.Journal.Add(time, text, category, salience, certainty, placeId, personId, source);
+            State.Journal.Add(time, text, category, salience, certainty, placeId, personId, source,
+                              State.Lineage.Generation);
         }
 
         public void KillAgent(string cause)
         {
+            // SaveSystem writes the chapter-close entry and runs succession —
+            // death is never game over.
             SaveSystem.KillAgent(State, cause);
+            LineageRng = new SeededRandom(State.Rng.Lineage);
+            ColossusRng = new SeededRandom(State.Rng.Colossus);
         }
     }
 }

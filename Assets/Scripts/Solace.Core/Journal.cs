@@ -15,12 +15,14 @@ namespace Solace.Core
         Weather,
         Travel,
         Reflection,
-        System
+        System,
+        Chapter   // chapter boundaries of the multi-generational chronicle
     }
 
     public class JournalEntry
     {
         public float Time;            // game seconds since life began
+        public int Generation = 1;    // lineage generation that wrote this
         public string Text;
         public JournalCategory Category;
         public int? PlaceId;          // POI id, if the entry is about a place
@@ -33,6 +35,7 @@ namespace Solace.Core
         {
             var o = new JsonObject();
             o.Add("time", Time);
+            o.Add("generation", Generation);
             o.Add("text", Text);
             o.Add("category", Category.ToString());
             o.Add("placeId", PlaceId.HasValue ? (JsonValue)JsonNumber.From(PlaceId.Value) : JsonNull.Instance);
@@ -47,6 +50,7 @@ namespace Solace.Core
         {
             var e = new JournalEntry();
             e.Time = JsonHelpers.GetFloat(o, "time", 0f);
+            e.Generation = JsonHelpers.GetInt(o, "generation", 1);
             e.Text = JsonHelpers.GetString(o, "text", "");
             e.Category = (JournalCategory)Enum.Parse(typeof(JournalCategory), JsonHelpers.GetString(o, "category", "System"));
             JsonValue pv;
@@ -81,11 +85,13 @@ namespace Solace.Core
 
         public JournalEntry Add(float time, string text, JournalCategory category,
                                 float salience = 0.5f, float certainty = 1f,
-                                int? placeId = null, int? personId = null, string source = "self")
+                                int? placeId = null, int? personId = null, string source = "self",
+                                int generation = 1)
         {
             var e = new JournalEntry
             {
                 Time = time,
+                Generation = generation,
                 Text = text,
                 Category = category,
                 Salience = salience,

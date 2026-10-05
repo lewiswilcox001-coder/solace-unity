@@ -166,30 +166,113 @@ namespace Solace.Core
 
     public class Observation
     {
-        public string Kind;      // "poi", "wolf", "deer", "rabbit", "villager"
+        public string Kind;      // "poi", "predator", "deer", "rabbit", "kindred"
         public int RefId;        // POI id or entity id
         public float X, Z;
         public float Distance;
         public float Salience;   // 0..1
     }
 
-    /// <summary>Solace's embodied state.</summary>
+    /// <summary>Solace's embodied state: a lantern-fox of the lineage.</summary>
     public class AgentState
     {
+        public int Id = 1;
+        public string Name = "Solace";
         public float X, Z;
         public float Facing;   // yaw radians, 0 = +Z
         public float Speed;
         public bool IsAlive = true;
 
-        // Needs: Energy 0..100 (100=rested). Hunger 0..100 (100=starving).
-        // Thirst 0..100 (100=parched). Health 0..100. Mood 0..100 (50=neutral).
-        // Curiosity 0..100 (100=restless to see something new).
+        // Needs: Energy 0..100 (100=blazing). ENERGY IS LIGHT — the creature's
+        // luminous core; everything about vigor and sickness reads in the glow.
+        // Hunger 0..100 (100=starving). Thirst 0..100 (100=parched).
+        // Health 0..100. Mood 0..100 (50=neutral). Curiosity 0..100 (100=restless).
         public float Energy = 80f;
         public float Hunger = 25f;
         public float Thirst = 20f;
         public float Health = 100f;
         public float Mood = 55f;
         public float Curiosity = 60f;
+
+        // Lineage: age in game-years, sickness of the light, the inherited hue.
+        public float Age = 4f;
+        public float LifespanYears = 16f;   // seeded ~14-20 per life
+        public SicknessKind Sickness = SicknessKind.None;
+        public float SicknessSeverity;      // 0..1
+        public bool SicknessWarned;
+        public float SicknessWarnedAt = -9999f;
+        public float LightShade = 0.5f;     // inherited hue 0..1 (ember-gold → moonlit blue)
+        public Bond Bond;                   // pair-bond, if any (null = unbonded)
+        public bool IsProtagonist = true;
+        public int Generation = 1;
+        public int MotherId = -1;           // kindred entity id, if known
+        public int FatherId = -1;           // agent id, if known
+        public List<int> TalesKnown = new List<int>(); // tale ids learned
+        public bool VigorForeshadowed;      // old-age dimming has been journaled
+        public float LastTaleToldAt = -9999f;
+
+        /// <summary>Life stage derived from age and lifespan.</summary>
+        public LifeStage Stage { get { return LineageSystem.StageFor(Age, LifespanYears); } }
+
+        /// <summary>
+        /// THE readable signal: 0..1 glow of the chest-core, from light
+        /// (energy), health, and sickness. Dimming reads here first.
+        /// </summary>
+        public float Glow
+        {
+            get
+            {
+                float g = 0.5f * (Energy / 100f) + 0.3f * (Health / 100f)
+                        + 0.2f * (1f - SicknessSeverity);
+                return MathX.Clamp01(g);
+            }
+        }
+
+        /// <summary>Max light declines in the elder years.</summary>
+        public float MaxEnergy
+        {
+            get
+            {
+                if (Stage != LifeStage.Elder) return 100f;
+                float elderStart = LifespanYears * 0.65f;
+                return Math.Max(60f, 100f - (Age - elderStart) * 8f);
+            }
+        }
+
+        /// <summary>Speed factor by stage: kits are quick but small, elders slow.</summary>
+        public float MaxSpeedFactor
+        {
+            get
+            {
+                switch (Stage)
+                {
+                    case LifeStage.Kit: return 0.7f;
+                    case LifeStage.Juvenile: return 0.9f;
+                    case LifeStage.Elder:
+                        return Math.Max(0.55f, 0.8f - (Age - LifespanYears * 0.65f) * 0.05f);
+                    default: return 1f;
+                }
+            }
+        }
+
+        /// <summary>Caution with the stage's pressure applied (elders warier).</summary>
+        public float EffectiveCaution
+        {
+            get
+            {
+                float c = Traits.Caution;
+                if (Stage == LifeStage.Elder) c += 0.15f;
+                else if (Stage == LifeStage.Kit) c -= 0.15f;
+                else if (Stage == LifeStage.Juvenile) c -= 0.05f;
+                return MathX.Clamp01(c);
+            }
+        }
+
+        /// <summary>Curiosity with the stage's pressure applied (kits burn curious).</summary>
+        public float EffectiveCuriosity
+        {
+            get { return MathX.Clamp(Curiosity + (Stage == LifeStage.Kit ? 25f : Stage == LifeStage.Juvenile ? 10f : Stage == LifeStage.Elder ? -10f : 0f), 0f, 100f); }
+        }
 
         public string CurrentGoal = "";
         public string CurrentActivity = "waking up";
@@ -222,11 +305,30 @@ namespace Solace.Core
         public JsonObject ToJson()
         {
             var o = new JsonObject();
+            o.Add("id", Id);
+            o.Add("name", Name);
             o.Add("x", X); o.Add("z", Z);
             o.Add("facing", Facing); o.Add("speed", Speed);
             o.Add("isAlive", IsAlive);
             o.Add("energy", Energy); o.Add("hunger", Hunger); o.Add("thirst", Thirst);
             o.Add("health", Health); o.Add("mood", Mood); o.Add("curiosity", Curiosity);
+            o.Add("age", Age); o.Add("lifespanYears", LifespanYears);
+            o.Add("sickness", Sickness.ToString());
+            o.Add("sicknessSeverity", SicknessSeverity);
+            o.Add("sicknessWarned", SicknessWarned);
+            o.Add("sicknessWarnedAt", SicknessWarnedAt);
+            o.Add("lightShade", LightShade);
+            o.Add("bond", Bond == null ? (JsonValue)JsonNull.Instance : (JsonValue)Bond.ToJson());
+            o.Add("isProtagonist", IsProtagonist);
+            o.Add("generation", Generation);
+            o.Add("motherId", MotherId); o.Add("fatherId", FatherId);
+            var ta = new JsonArray();
+            var sortedTales = new List<int>(TalesKnown);
+            sortedTales.Sort();
+            foreach (var id in sortedTales) ta.Add(id);
+            o.Add("talesKnown", ta);
+            o.Add("vigorForeshadowed", VigorForeshadowed);
+            o.Add("lastTaleToldAt", LastTaleToldAt);
             o.Add("goal", CurrentGoal); o.Add("activity", CurrentActivity);
             o.Add("traits", Traits.ToJson());
             var ia = new JsonArray();
@@ -252,6 +354,8 @@ namespace Solace.Core
         public static AgentState FromJson(JsonObject o)
         {
             var a = new AgentState();
+            a.Id = JsonHelpers.GetInt(o, "id", 1);
+            a.Name = JsonHelpers.GetString(o, "name", "Solace");
             a.X = JsonHelpers.GetFloat(o, "x", 0f); a.Z = JsonHelpers.GetFloat(o, "z", 0f);
             a.Facing = JsonHelpers.GetFloat(o, "facing", 0f); a.Speed = JsonHelpers.GetFloat(o, "speed", 0f);
             a.IsAlive = JsonHelpers.GetBool(o, "isAlive", true);
@@ -261,6 +365,29 @@ namespace Solace.Core
             a.Health = JsonHelpers.GetFloat(o, "health", 100f);
             a.Mood = JsonHelpers.GetFloat(o, "mood", 55f);
             a.Curiosity = JsonHelpers.GetFloat(o, "curiosity", 60f);
+            a.Age = JsonHelpers.GetFloat(o, "age", 4f);
+            a.LifespanYears = JsonHelpers.GetFloat(o, "lifespanYears", 16f);
+            JsonValue sv;
+            a.Sickness = o.TryGet("sickness", out sv) && !sv.IsNull
+                ? (SicknessKind)Enum.Parse(typeof(SicknessKind), sv.AsString()) : SicknessKind.None;
+            a.SicknessSeverity = JsonHelpers.GetFloat(o, "sicknessSeverity", 0f);
+            a.SicknessWarned = JsonHelpers.GetBool(o, "sicknessWarned", false);
+            a.SicknessWarnedAt = JsonHelpers.GetFloat(o, "sicknessWarnedAt", -9999f);
+            a.LightShade = JsonHelpers.GetFloat(o, "lightShade", 0.5f);
+            JsonValue bv;
+            a.Bond = o.TryGet("bond", out bv) && !bv.IsNull ? Bond.FromJson(bv.AsObject()) : null;
+            a.IsProtagonist = JsonHelpers.GetBool(o, "isProtagonist", true);
+            a.Generation = JsonHelpers.GetInt(o, "generation", 1);
+            a.MotherId = JsonHelpers.GetInt(o, "motherId", -1);
+            a.FatherId = JsonHelpers.GetInt(o, "fatherId", -1);
+            JsonValue tkv;
+            if (o.TryGet("talesKnown", out tkv) && !tkv.IsNull)
+            {
+                var tar = tkv.AsArray();
+                for (int i = 0; i < tar.Count; i++) a.TalesKnown.Add(((JsonNumber)tar[i]).AsInt());
+            }
+            a.VigorForeshadowed = JsonHelpers.GetBool(o, "vigorForeshadowed", false);
+            a.LastTaleToldAt = JsonHelpers.GetFloat(o, "lastTaleToldAt", -9999f);
             a.CurrentGoal = JsonHelpers.GetString(o, "goal", "");
             a.CurrentActivity = JsonHelpers.GetString(o, "activity", "waking up");
             JsonValue tv;
@@ -308,8 +435,8 @@ namespace Solace.Core
             return null;
         }
 
-        /// <summary>Nearest living wolf and its distance; null if none within maxDist.</summary>
-        public EntityState NearestWolf(float maxDist, out float dist)
+        /// <summary>Nearest living gloom-maw and its distance; null if none within maxDist.</summary>
+        public EntityState NearestPredator(float maxDist, out float dist)
         {
             dist = float.MaxValue;
             EntityState best = null;
@@ -317,21 +444,21 @@ namespace Solace.Core
             for (int i = 0; i < list.Count; i++)
             {
                 var e = list[i];
-                if (e.Kind != EntityKind.Wolf || e.Health <= 0) continue;
+                if (e.Kind != EntityKind.Predator || e.Health <= 0) continue;
                 float d = V2.Distance(Agent.Pos, new V2(e.X, e.Z));
                 if (d < maxDist && d < dist) { dist = d; best = e; }
             }
             return best;
         }
 
-        public int CountWolves(float maxDist)
+        public int CountPredators(float maxDist)
         {
             int n = 0;
             var list = State.Entities;
             for (int i = 0; i < list.Count; i++)
             {
                 var e = list[i];
-                if (e.Kind != EntityKind.Wolf || e.Health <= 0) continue;
+                if (e.Kind != EntityKind.Predator || e.Health <= 0) continue;
                 if (V2.Distance(Agent.Pos, new V2(e.X, e.Z)) < maxDist) n++;
             }
             return n;
@@ -360,7 +487,8 @@ namespace Solace.Core
             _actions.Add(new RestAction());
             _actions.Add(new ExplorePoiAction());
             _actions.Add(new ObserveWildlifeAction());
-            _actions.Add(new GreetVillagerAction());
+            _actions.Add(new GreetKindredAction());
+            _actions.Add(new SeekBondAction());
             _actions.Add(new LootRuinAction());
         }
 
@@ -506,7 +634,7 @@ namespace Solace.Core
         private void DecayNeeds(AgentState a, float dt, Simulation sim)
         {
             bool moving = a.Speed > 0.3f;
-            a.Energy = MathX.Clamp(a.Energy - dt * (moving ? 0.10f : 0.035f), 0f, 100f);
+            a.Energy = MathX.Clamp(a.Energy - dt * (moving ? 0.10f : 0.035f), 0f, a.MaxEnergy);
             a.Hunger = MathX.Clamp(a.Hunger + dt * 0.045f, 0f, 100f);
             a.Thirst = MathX.Clamp(a.Thirst + dt * 0.06f, 0f, 100f);
 
@@ -515,10 +643,11 @@ namespace Solace.Core
             if (a.Hunger < 55f && a.Thirst < 55f && a.Energy > 20f)
                 a.Health = Math.Min(100f, a.Health + dt * 0.12f);
 
-            // Mood drifts toward neutral; curiosity grows when idle.
+            // Mood drifts toward neutral; curiosity grows when idle (kits burn curious).
             a.Mood += (50f - a.Mood) * dt * 0.01f;
             a.Mood = MathX.Clamp(a.Mood, 0f, 100f);
-            a.Curiosity = MathX.Clamp(a.Curiosity + dt * (moving ? 0.008f : 0.03f), 0f, 100f);
+            float curiosityRate = a.Stage == LifeStage.Kit ? 0.06f : 0.03f;
+            a.Curiosity = MathX.Clamp(a.Curiosity + dt * (moving ? curiosityRate * 0.27f : curiosityRate), 0f, 100f);
 
             a.Health = MathX.Clamp(a.Health, 0f, 100f);
             if (a.Health <= 0f && a.IsAlive)
@@ -536,7 +665,7 @@ namespace Solace.Core
                 float d = V2.Distance(pos, new V2(poi.X, poi.Z));
                 if (d > SightRadius) continue;
                 float salience = poi.Discovered ? 0.25f : 0.9f;
-                if (poi.Type == PoiType.BerryBush && poi.Stock > 0 && agent.Hunger > 40f)
+                if (poi.Type == PoiType.GlowberryBush && poi.Stock > 0 && agent.Hunger > 40f)
                     salience = Math.Max(salience, 0.75f);
                 ctx.Observations.Add(new Observation
                 {
@@ -552,8 +681,8 @@ namespace Solace.Core
                 if (d > SightRadius) continue;
                 string kind = e.Kind.ToString().ToLowerInvariant();
                 float salience = 0.4f;
-                if (e.Kind == EntityKind.Wolf) salience = 1f;
-                else if (e.Kind == EntityKind.Villager) salience = 0.65f;
+                if (e.Kind == EntityKind.Predator) salience = 1f;
+                else if (e.Kind == EntityKind.Kindred) salience = 0.65f;
                 ctx.Observations.Add(new Observation
                 {
                     Kind = kind, RefId = e.Id, X = e.X, Z = e.Z,
@@ -593,6 +722,8 @@ namespace Solace.Core
             V2 dir = to / dist;
             float energyFactor = 0.6f + 0.4f * (a.Energy / 100f);
             float speed = (a.RunToTarget ? 5.2f : 2.3f) * energyFactor;
+            speed *= a.MaxSpeedFactor;                          // age: elders slow
+            speed *= 1f - 0.35f * a.SicknessSeverity;            // sickness drags
             speed *= MathX.Clamp01(dist / 7f); // arrival
             speed = Math.Max(speed, 0.4f);
 
@@ -686,15 +817,15 @@ namespace Solace.Core
             a.RunToTarget = false;
         }
 
-        /// <summary>How dangerous the nearest wolves feel right now, 0..1.</summary>
-        protected float WolfDanger(BrainContext ctx, float radius)
+        /// <summary>How dangerous the nearest gloom-maws feel right now, 0..1.</summary>
+        protected float PredatorDanger(BrainContext ctx, float radius)
         {
             float d;
-            var wolf = ctx.NearestWolf(radius, out d);
-            if (wolf == null) return 0f;
+            var predator = ctx.NearestPredator(radius, out d);
+            if (predator == null) return 0f;
             float closeness = 1f - d / radius;
-            float strength = wolf.Health / 100f;
-            int pack = ctx.CountWolves(radius);
+            float strength = predator.Health / 100f;
+            int pack = ctx.CountPredators(radius);
             return MathX.Clamp01(closeness * (0.4f + 0.6f * strength) * (pack > 1 ? 1.3f : 1f));
         }
     }
@@ -710,20 +841,20 @@ namespace Solace.Core
         public override bool CanScore(BrainContext ctx)
         {
             float d;
-            var wolf = ctx.NearestWolf(17f, out d);
-            if (wolf == null) return false;
-            bool outmatched = wolf.Health > 35f || ctx.Agent.Health < 55f || ctx.CountWolves(26f) > 1;
+            var predator = ctx.NearestPredator(17f, out d);
+            if (predator == null) return false;
+            bool outmatched = predator.Health > 35f || ctx.Agent.Health < 55f || ctx.CountPredators(26f) > 1;
             return outmatched;
         }
 
         public override float Score(BrainContext ctx, List<ScoreComponent> c)
         {
             float d;
-            ctx.NearestWolf(17f, out d);
+            ctx.NearestPredator(17f, out d);
             var a = ctx.Agent;
             Add(c, "danger", MathX.Clamp01(1f - d / 17f), 0.55f);
             Add(c, "vulnerability", 1f - a.Health / 100f, 0.25f);
-            Add(c, "caution", a.Traits.Caution, 0.20f);
+            Add(c, "caution", a.EffectiveCaution, 0.20f);
             return Total(c);
         }
 
@@ -731,22 +862,22 @@ namespace Solace.Core
         {
             var a = ctx.Agent;
             float d;
-            var wolf = ctx.NearestWolf(30f, out d);
+            var predator = ctx.NearestPredator(30f, out d);
             a.FleeUntil = ctx.Now + 12f;
             a.InCombat = false;
             a.CurrentGoal = "Flee";
-            if (wolf != null)
+            if (predator != null)
             {
-                V2 away = (a.Pos - new V2(wolf.X, wolf.Z)).Normalized();
-                // Run toward the hamlet if it is roughly away from the wolf — home is safety.
-                var hamlet = FindHamlet(ctx);
-                if (hamlet != null)
+                V2 away = (a.Pos - new V2(predator.X, predator.Z)).Normalized();
+                // Run toward the den if it is roughly away from the predator — home is safety.
+                var den = FindDen(ctx);
+                if (den != null)
                 {
-                    V2 toHome = (new V2(hamlet.X, hamlet.Z) - a.Pos).Normalized();
+                    V2 toHome = (new V2(den.X, den.Z) - a.Pos).Normalized();
                     if (away.Dot(toHome) > 0.2f) away = (away + toHome * 0.7f).Normalized();
                 }
                 MoveTo(ctx, a.X + away.X * 55f, a.Z + away.Z * 55f, 6f, true);
-                a.CurrentActivity = "running from the wolf";
+                a.CurrentActivity = "running from the gloom-maw";
             }
             else
             {
@@ -759,22 +890,26 @@ namespace Solace.Core
         {
             var a = ctx.Agent;
             float d;
-            var wolf = ctx.NearestWolf(40f, out d);
-            if (ctx.Now >= a.FleeUntil || wolf == null || d > 34f)
+            var predator = ctx.NearestPredator(40f, out d);
+            if (ctx.Now >= a.FleeUntil || predator == null || d > 34f)
             {
                 a.FleeUntil = 0f;
                 Stop(ctx);
                 a.CurrentActivity = "catching my breath";
                 a.DecisionTimer = 0f; // re-decide now that the danger passed
-                ctx.Sim.Journal(ctx.Now, "I lost the wolf and stood shaking in the heather.",
+                ctx.Sim.Journal(ctx.Now, "I lost the gloom-maw and stood shaking in the heather.",
                     JournalCategory.Combat, 0.55f);
                 // Surviving danger teaches caution; standing ground teaches pride.
                 a.Traits.Nudge("Caution", 0.01f);
+                // Outrunning a gloom-maw at close quarters becomes a tale.
+                if (d < 12f)
+                    LineageSystem.MaybeDistillTale(ctx.Sim, "Outrunning the Gloom", "Caution", 0.05f,
+                        "outran a gloom-maw on the fell");
             }
-            else if (wolf != null && d < 20f)
+            else if (predator != null && d < 20f)
             {
                 // Keep running from the current threat position.
-                V2 away = (a.Pos - new V2(wolf.X, wolf.Z)).Normalized();
+                V2 away = (a.Pos - new V2(predator.X, predator.Z)).Normalized();
                 a.TargetX = a.X + away.X * 40f;
                 a.TargetZ = a.Z + away.Z * 40f;
                 a.HasMoveTarget = true;
@@ -784,13 +919,13 @@ namespace Solace.Core
 
         public override string DescribeReason(BrainContext ctx)
         {
-            return "A wolf was too close and I was outmatched — running was the only sane choice.";
+            return "A gloom-maw was too close and I was outmatched — running was the only sane choice.";
         }
 
-        private PointOfInterest FindHamlet(BrainContext ctx)
+        private PointOfInterest FindDen(BrainContext ctx)
         {
             foreach (var p in ctx.World.Pois)
-                if (p.Type == PoiType.Hamlet) return p;
+                if (p.Type == PoiType.Den) return p;
             return null;
         }
     }
@@ -806,23 +941,23 @@ namespace Solace.Core
         public override bool CanScore(BrainContext ctx)
         {
             float d;
-            var wolf = ctx.NearestWolf(7f, out d);
-            if (wolf == null) return false;
+            var predator = ctx.NearestPredator(7f, out d);
+            if (predator == null) return false;
             var a = ctx.Agent;
             bool strong = a.Health > 60f && ctx.Sim.State.Inventory.HasSword;
             bool desperate = d < 3.5f && ctx.Now < a.FleeUntil; // cornered while fleeing
-            bool finishing = wolf.Health < 32f && a.Health > 40f;
+            bool finishing = predator.Health < 32f && a.Health > 40f;
             return strong || desperate || finishing;
         }
 
         public override float Score(BrainContext ctx, List<ScoreComponent> c)
         {
             float d;
-            var wolf = ctx.NearestWolf(7f, out d);
+            var predator = ctx.NearestPredator(7f, out d);
             var a = ctx.Agent;
             bool armed = ctx.Sim.State.Inventory.HasSword;
             Add(c, "self-defense", d < 4f ? 0.85f : 0.45f, 0.35f);
-            Add(c, "advantage", (armed ? 0.8f : 0.35f) * (1f - wolf.Health / 100f * 0.5f), 0.30f);
+            Add(c, "advantage", (armed ? 0.8f : 0.35f) * (1f - predator.Health / 100f * 0.5f), 0.30f);
             Add(c, "risk", (1f - a.Health / 100f) * (armed ? 0.7f : 1f), -0.25f);
             Add(c, "pride", a.Traits.Pride * 0.5f, 0.10f);
             return Total(c);
@@ -832,34 +967,34 @@ namespace Solace.Core
         {
             var a = ctx.Agent;
             float d;
-            var wolf = ctx.NearestWolf(8f, out d);
+            var predator = ctx.NearestPredator(8f, out d);
             a.InCombat = true;
-            a.CombatTargetId = wolf != null ? wolf.Id : -1;
+            a.CombatTargetId = predator != null ? predator.Id : -1;
             a.CurrentGoal = "Fight";
-            a.CurrentActivity = "fighting the wolf";
+            a.CurrentActivity = "fighting the gloom-maw";
             Stop(ctx);
-            ctx.Sim.Journal(ctx.Now, "The wolf came on and I stood my ground.",
+            ctx.Sim.Journal(ctx.Now, "The gloom-maw came on and I stood my ground.",
                 JournalCategory.Combat, 0.6f);
         }
 
         public override void Update(BrainContext ctx, float dt)
         {
             var a = ctx.Agent;
-            var wolf = ctx.FindEntity(a.CombatTargetId);
-            if (wolf == null || wolf.Health <= 0 || wolf.Kind != EntityKind.Wolf)
+            var predator = ctx.FindEntity(a.CombatTargetId);
+            if (predator == null || predator.Health <= 0 || predator.Kind != EntityKind.Predator)
             {
-                EndCombat(ctx, "The wolf is down. My hands won't stop shaking.");
+                EndCombat(ctx, "The gloom-maw is down. My paws won't stop shaking.");
                 return;
             }
-            float d = V2.Distance(a.Pos, new V2(wolf.X, wolf.Z));
+            float d = V2.Distance(a.Pos, new V2(predator.X, predator.Z));
             if (d > 3.5f)
             {
                 // Close the distance.
-                MoveTo(ctx, wolf.X, wolf.Z, 2f, true);
+                MoveTo(ctx, predator.X, predator.Z, 2f, true);
                 return;
             }
             Stop(ctx);
-            a.Facing = MathX.YawFromDir(new V2(wolf.X - a.X, wolf.Z - a.Z));
+            a.Facing = MathX.YawFromDir(new V2(predator.X - a.X, predator.Z - a.Z));
 
             // Self-preservation overrides pride.
             if (a.Health < 22f)
@@ -878,18 +1013,20 @@ namespace Solace.Core
             if (a.ActionTimer >= 1.6f)
             {
                 a.ActionTimer = 0f;
-                var round = Combat.ResolveRound(a, wolf, ctx.Sim.State.Inventory.HasSword, ctx.Ai);
+                var round = Combat.ResolveRound(a, predator, ctx.Sim.State.Inventory.HasSword, ctx.Ai);
                 ctx.Sim.Journal(ctx.Now, round.Log, JournalCategory.Combat, 0.35f);
-                if (round.WolfFlees || round.WolfDies)
+                if (round.PredatorFlees || round.PredatorDies)
                 {
-                    wolf.Behavior = round.WolfDies ? "Dead" : "Flee";
-                    wolf.StateTimer = 6f;
-                    string epitaph = round.WolfDies
-                        ? "It is over. The wolf lies still, and I am sorry and alive."
+                    predator.Behavior = round.PredatorDies ? "Dead" : "Flee";
+                    predator.StateTimer = 6f;
+                    string epitaph = round.PredatorDies
+                        ? "It is over. The gloom-maw lies still, and I am sorry and alive."
                         : "It turned and ran, tail low. I let it go.";
                     EndCombat(ctx, epitaph);
                     a.Traits.Nudge("Pride", 0.015f);
-                    a.Mood = MathX.Clamp(a.Mood + (round.WolfDies ? -6f : 8f), 0f, 100f);
+                    a.Mood = MathX.Clamp(a.Mood + (round.PredatorDies ? -6f : 8f), 0f, 100f);
+                    LineageSystem.MaybeDistillTale(ctx.Sim, "Standing Ground", "Pride", 0.05f,
+                        "stood down a gloom-maw and lived");
                 }
             }
         }
@@ -911,7 +1048,7 @@ namespace Solace.Core
 
         public override string DescribeReason(BrainContext ctx)
         {
-            return "The wolf was on me and I had the strength and the steel — better to end it than be run down.";
+            return "The gloom-maw was on me and I had the strength and the steel — better to end it than be run down.";
         }
     }
 
@@ -929,7 +1066,7 @@ namespace Solace.Core
             float bestD = float.MaxValue;
             foreach (var poi in ctx.World.Pois)
             {
-                if (poi.Type != PoiType.BerryBush || poi.Stock <= 0) continue;
+                if (poi.Type != PoiType.GlowberryBush || poi.Stock <= 0) continue;
                 if (!ctx.Agent.KnownPoiIds.Contains(poi.Id)) continue;
                 float d = V2.Distance(ctx.Agent.Pos, new V2(poi.X, poi.Z));
                 if (d < bestD) { bestD = d; best = poi; }
@@ -951,7 +1088,7 @@ namespace Solace.Core
             Add(c, "hunger", a.Hunger / 100f, 0.45f);
             Add(c, "meal", bush != null ? 0.55f + 0.35f * (bush.Stock / 8f) : 0.6f, 0.25f);
             Add(c, "effort", dist / 150f, -0.15f);
-            Add(c, "risk", WolfDanger(ctx, 40f), -0.15f);
+            Add(c, "risk", PredatorDanger(ctx, 40f), -0.15f);
             return Total(c);
         }
 
@@ -964,7 +1101,7 @@ namespace Solace.Core
             {
                 a.TargetPoiId = bush.Id;
                 MoveTo(ctx, bush.X, bush.Z, bush.Radius, false);
-                a.CurrentActivity = "going to pick berries";
+                a.CurrentActivity = "going to pick glowberries";
             }
             else
             {
@@ -974,7 +1111,7 @@ namespace Solace.Core
                 {
                     a.Hunger = MathX.Clamp(a.Hunger - 45f, 0f, 100f);
                     a.Mood = MathX.Clamp(a.Mood + 4f, 0f, 100f);
-                    ctx.Sim.Journal(ctx.Now, "I sat down and ate some bread. Plain, and exactly right.",
+                    ctx.Sim.Journal(ctx.Now, "I sat down and ate a seedcake. Plain, and exactly right.",
                         JournalCategory.Survival, 0.25f);
                 }
                 Stop(ctx);
@@ -993,7 +1130,7 @@ namespace Solace.Core
                 {
                     ctx.Sim.State.Inventory.EatBread();
                     a.Hunger = MathX.Clamp(a.Hunger - 45f, 0f, 100f);
-                    ctx.Sim.Journal(ctx.Now, "The bush was bare, so I ate bread instead.",
+                    ctx.Sim.Journal(ctx.Now, "The bush was bare, so I ate a seedcake instead.",
                         JournalCategory.Survival, 0.25f);
                 }
                 a.DecisionTimer = 0f;
@@ -1006,15 +1143,19 @@ namespace Solace.Core
                 bush.Stock--;
                 a.Hunger = MathX.Clamp(a.Hunger - 30f, 0f, 100f);
                 a.Mood = MathX.Clamp(a.Mood + 3f, 0f, 100f);
-                a.CurrentActivity = "picking berries";
+                a.CurrentActivity = "picking glowberries";
+                // Eating well feeds the light: a sick fox eating recovers a little.
+                if (a.Sickness != SicknessKind.None)
+                    a.SicknessSeverity = MathX.Clamp01(a.SicknessSeverity - 0.05f);
+                LineageSystem.MaybeGutTwist(ctx.Sim); // gorging while starving has a price
                 ctx.Sim.State.Beliefs.AddOrUpdate("food.bush." + bush.Id,
-                    "the bush " + DescribeWhere(ctx, bush) + " has berries",
+                    "the bush " + DescribeWhere(ctx, bush) + " has glowberries",
                     "saw", 0.8f, ctx.Now);
                 if (ctx.Ev.NextFloat() < 0.35f || bush.Stock == 0)
                     ctx.Sim.Journal(ctx.Now,
                         bush.Stock == 0
-                            ? "I stripped the last of the berries. The bush will need time."
-                            : "I ate berries warm from the sun, juice on my fingers.",
+                            ? "I stripped the last of the glowberries. The bush will need time."
+                            : "I ate glowberries warm from the sun, light on my tongue.",
                         JournalCategory.Survival, 0.3f, 1f, bush.Id);
                 if (a.Hunger < 25f) a.DecisionTimer = 0f; // sated: choose anew
             }
@@ -1058,7 +1199,7 @@ namespace Solace.Core
             Add(c, "thirst", a.Thirst / 100f, 0.50f);
             Add(c, "relief", 0.8f, 0.15f);
             Add(c, "effort", dist / 200f, -0.20f);
-            Add(c, "risk", WolfDanger(ctx, 40f), -0.15f);
+            Add(c, "risk", PredatorDanger(ctx, 40f), -0.15f);
             return Total(c);
         }
 
@@ -1117,10 +1258,10 @@ namespace Solace.Core
             float bestScore = float.MinValue;
             foreach (var poi in ctx.World.Pois)
             {
-                if (poi.Type != PoiType.Campfire && poi.Type != PoiType.Hamlet) continue;
-                if (!ctx.Agent.KnownPoiIds.Contains(poi.Id) && poi.Type != PoiType.Hamlet) continue;
+                if (poi.Type != PoiType.EmberHollow && poi.Type != PoiType.Den) continue;
+                if (!ctx.Agent.KnownPoiIds.Contains(poi.Id) && poi.Type != PoiType.Den) continue;
                 float d = V2.Distance(ctx.Agent.Pos, new V2(poi.X, poi.Z));
-                float comfort = poi.Type == PoiType.Campfire ? 1f : 0.8f;
+                float comfort = poi.Type == PoiType.EmberHollow ? 1f : 0.8f;
                 float score = comfort - d / 300f;
                 if (score > bestScore) { bestScore = score; best = poi; }
             }
@@ -1135,9 +1276,12 @@ namespace Solace.Core
             var shelter = TargetShelter(ctx);
             float dist = shelter != null ? V2.Distance(a.Pos, new V2(shelter.X, shelter.Z)) : 0f;
             Add(c, "fatigue", (100f - a.Energy) / 100f, 0.45f);
-            Add(c, "comfort", shelter != null ? (shelter.Type == PoiType.Campfire ? 0.9f : 0.75f) : 0.4f, 0.20f);
+            Add(c, "comfort", shelter != null ? (shelter.Type == PoiType.EmberHollow ? 0.9f : 0.75f) : 0.4f, 0.20f);
             Add(c, "effort", dist / 300f, -0.15f);
-            Add(c, "risk", WolfDanger(ctx, 45f), -0.20f);
+            Add(c, "risk", PredatorDanger(ctx, 45f), -0.20f);
+            // Sickness makes rest urgent: the light needs tending.
+            if (a.Sickness != SicknessKind.None)
+                Add(c, "sickness", 0.5f + 0.5f * a.SicknessSeverity, 0.30f);
             return Total(c);
         }
 
@@ -1150,8 +1294,8 @@ namespace Solace.Core
             {
                 a.TargetPoiId = shelter.Id;
                 MoveTo(ctx, shelter.X, shelter.Z, shelter.Radius * 0.6f, false);
-                a.CurrentActivity = shelter.Type == PoiType.Campfire
-                    ? "going to rest by the fire"
+                a.CurrentActivity = shelter.Type == PoiType.EmberHollow
+                    ? "going to rest in the ember-hollow"
                     : "going home to rest";
             }
             else
@@ -1171,26 +1315,65 @@ namespace Solace.Core
             if (!arrived) return;
 
             Stop(ctx);
-            float quality = shelter == null ? 1.0f : shelter.Type == PoiType.Campfire ? 2.2f : 1.8f;
-            a.Energy = MathX.Clamp(a.Energy + dt * quality, 0f, 100f);
+            float quality = shelter == null ? 1.0f : shelter.Type == PoiType.EmberHollow ? 2.2f : 1.8f;
+            // Sickness taxes rest: the light rekindles slower.
+            quality *= 1f - 0.55f * a.SicknessSeverity;
+            a.Energy = MathX.Clamp(a.Energy + dt * quality, 0f, a.MaxEnergy);
             if (a.Hunger < 60f && a.Thirst < 60f)
                 a.Health = Math.Min(100f, a.Health + dt * 0.15f);
-            a.CurrentActivity = shelter != null && shelter.Type == PoiType.Campfire
-                ? "resting by the fire" : "resting";
+            a.CurrentActivity = shelter != null && shelter.Type == PoiType.EmberHollow
+                ? "resting in the ember-hollow" : "resting";
             a.Mood = MathX.Clamp(a.Mood + dt * 0.2f, 0f, 100f);
 
-            if (a.Energy >= 98f)
+            // Tales are told at rest, near kits or kindred.
+            TellTale(ctx);
+
+            if (a.Energy >= a.MaxEnergy * 0.98f)
             {
                 a.DecisionTimer = 0f;
                 if (ctx.Ev.NextFloat() < 0.5f)
-                    ctx.Sim.Journal(ctx.Now, "I woke from a doze feeling like myself again.",
+                    ctx.Sim.Journal(ctx.Now, "I woke from a doze, my light steady, feeling like myself again.",
                         JournalCategory.Survival, 0.2f);
             }
         }
 
+        private void TellTale(BrainContext ctx)
+        {
+            var a = ctx.Agent;
+            if (a.TalesKnown.Count == 0) return;
+            if (ctx.Now - a.LastTaleToldAt < 7200f) return; // at most every 2 game-hours
+
+            // An audience: kits at the den, or kindred nearby.
+            bool kitsNear = false;
+            foreach (var k in ctx.Sim.State.Kits)
+            {
+                if (!k.IsAlive) continue;
+                if (V2.Distance(a.Pos, k.Pos) < 25f) { kitsNear = true; break; }
+            }
+            EntityState kindredNear = null;
+            if (!kitsNear)
+            {
+                foreach (var e in ctx.Sim.State.Entities)
+                {
+                    if (e.Kind != EntityKind.Kindred || !e.IsAlive) continue;
+                    if (V2.Distance(a.Pos, e.Pos) < 15f) { kindredNear = e; break; }
+                }
+            }
+            if (!kitsNear && kindredNear == null) return;
+
+            var tale = ctx.Sim.State.Lineage.GetTale(
+                a.TalesKnown[ctx.Ev.NextInt(a.TalesKnown.Count)]);
+            if (tale == null) return;
+            a.LastTaleToldAt = ctx.Now;
+            string audience = kitsNear ? "the kits" : kindredNear.Name;
+            ctx.Sim.Journal(ctx.Now,
+                "I told " + audience + " the tale of " + tale.Title + ".",
+                JournalCategory.Social, 0.5f);
+        }
+
         public override string DescribeReason(BrainContext ctx)
         {
-            return "My legs were heavy and my thoughts were slow — rest wasn't a choice, it was a debt.";
+            return "My light was low and my legs were heavy — rest wasn't a choice, it was a debt.";
         }
     }
 
@@ -1205,12 +1388,12 @@ namespace Solace.Core
         {
             switch (t)
             {
-                case PoiType.BrochRuin: return 1.0f;
+                case PoiType.InsectileRuin: return 1.0f;
                 case PoiType.RuinSite: return 0.85f;
                 case PoiType.Overlook: return 0.6f;
                 case PoiType.Cairn: return 0.45f;
-                case PoiType.Campfire: return 0.35f;
-                case PoiType.BerryBush: return 0.3f;
+                case PoiType.EmberHollow: return 0.35f;
+                case PoiType.GlowberryBush: return 0.3f;
                 default: return 0.4f;
             }
         }
@@ -1237,11 +1420,11 @@ namespace Solace.Core
             var poi = TargetUndiscovered(ctx);
             float d = V2.Distance(a.Pos, new V2(poi.X, poi.Z));
             float mystery = Mystery(poi.Type);
-            Add(c, "novelty", (0.35f + 0.65f * a.Curiosity / 100f) * mystery, 0.40f);
+            Add(c, "novelty", (0.35f + 0.65f * a.EffectiveCuriosity / 100f) * mystery, 0.40f);
             Add(c, "promise", mystery, 0.15f);
             Add(c, "effort", d / 400f, -0.20f);
-            Add(c, "risk", WolfDanger(ctx, 50f) * 0.6f + a.Traits.Caution * (d / 400f) * 0.6f, -0.15f);
-            Add(c, "curiosity", a.Traits.Curiosity * mystery, 0.10f);
+            Add(c, "risk", PredatorDanger(ctx, 50f) * 0.6f + a.EffectiveCaution * (d / 400f) * 0.6f, -0.15f);
+            Add(c, "curiosity", a.EffectiveCuriosity / 100f * mystery, 0.10f);
             return Total(c);
         }
 
@@ -1307,7 +1490,7 @@ namespace Solace.Core
         {
             if (ctx.Agent.Energy < 25f) return false;
             float d;
-            if (ctx.NearestWolf(30f, out d) != null) return false;
+            if (ctx.NearestPredator(30f, out d) != null) return false;
             return TargetAnimal(ctx) != null;
         }
 
@@ -1317,7 +1500,7 @@ namespace Solace.Core
             var animal = TargetAnimal(ctx);
             float d = V2.Distance(a.Pos, new V2(animal.X, animal.Z));
             bool fresh = a.LastObservedEntityId != animal.Id || ctx.Now - a.LastObservedTime > 3600f;
-            Add(c, "wonder", 0.25f + 0.65f * a.Curiosity / 100f, 0.45f);
+            Add(c, "wonder", 0.25f + 0.65f * a.EffectiveCuriosity / 100f, 0.45f);
             Add(c, "novelty", fresh ? 0.8f : 0.25f, 0.20f);
             Add(c, "ease", 1f - d / 45f, 0.15f);
             Add(c, "patience", a.Traits.Patience, 0.10f);
@@ -1373,32 +1556,32 @@ namespace Solace.Core
         }
     }
 
-    // ------------------------------------------------------------ GreetVillager
+    // ------------------------------------------------------------ GreetKindred
 
-    public class GreetVillagerAction : AgentAction
+    public class GreetKindredAction : AgentAction
     {
         public override string Name { get { return "Greet"; } }
         public override string Topic { get { return "social"; } }
 
-        public EntityState TargetVillager(BrainContext ctx)
+        public EntityState TargetKindred(BrainContext ctx)
         {
             EntityState best = null;
             float bestD = float.MaxValue;
             foreach (var e in ctx.State.Entities)
             {
-                if (e.Kind != EntityKind.Villager || e.Health <= 0) continue;
+                if (e.Kind != EntityKind.Kindred || e.Health <= 0) continue;
                 float d = V2.Distance(ctx.Agent.Pos, new V2(e.X, e.Z));
                 if (d < 32f && d < bestD) { bestD = d; best = e; }
             }
             return best;
         }
 
-        public override bool CanScore(BrainContext ctx) { return TargetVillager(ctx) != null; }
+        public override bool CanScore(BrainContext ctx) { return TargetKindred(ctx) != null; }
 
         public override float Score(BrainContext ctx, List<ScoreComponent> c)
         {
             var a = ctx.Agent;
-            var v = TargetVillager(ctx);
+            var v = TargetKindred(ctx);
             float d = V2.Distance(a.Pos, new V2(v.X, v.Z));
             var rec = ctx.Sim.State.Social.GetPerson(v.Id);
             float familiarity = rec != null ? rec.Trust : 0.3f;
@@ -1413,7 +1596,7 @@ namespace Solace.Core
         public override void Begin(BrainContext ctx)
         {
             var a = ctx.Agent;
-            var v = TargetVillager(ctx);
+            var v = TargetKindred(ctx);
             a.CurrentGoal = "Greet";
             if (v != null)
             {
@@ -1427,7 +1610,7 @@ namespace Solace.Core
         {
             var a = ctx.Agent;
             var v = ctx.FindEntity(a.TargetEntityId);
-            if (v == null || v.Kind != EntityKind.Villager) { a.DecisionTimer = 0f; return; }
+            if (v == null || v.Kind != EntityKind.Kindred) { a.DecisionTimer = 0f; return; }
             float d = V2.Distance(a.Pos, new V2(v.X, v.Z));
             if (d > 3.5f) return; // still walking over
             Stop(ctx);
@@ -1440,13 +1623,18 @@ namespace Solace.Core
             var rec = ctx.Sim.State.Social.GetPerson(v.Id);
             a.Mood = MathX.Clamp(a.Mood + 3f + 3f * a.Traits.Sociability, 0f, 100f);
 
-            // Villagers share news: with trust-scaled probability they name an unknown place.
+            // Repeated greetings with a trusted adult kindred deepen into a bond.
+            bool adult = a.Stage == LifeStage.Adult || a.Stage == LifeStage.Elder;
+            if (adult && rec.Trust > 0.55f)
+                DeepenBond(ctx, a, v);
+
+            // Kindred share news: with trust-scaled probability they name an unknown place.
             string rumorText = "";
             if (ctx.Ai.NextFloat() < 0.25f + rec.Trust * 0.45f)
             {
                 var unknown = new List<PointOfInterest>();
                 foreach (var p in ctx.World.Pois)
-                    if (!p.LearnedName && p.Type != PoiType.Hamlet && p.Type != PoiType.BerryBush)
+                    if (!p.LearnedName && p.Type != PoiType.Den && p.Type != PoiType.GlowberryBush)
                         unknown.Add(p);
                 if (unknown.Count > 0)
                 {
@@ -1467,13 +1655,118 @@ namespace Solace.Core
             a.DecisionTimer = 3f;
         }
 
+        private void DeepenBond(BrainContext ctx, AgentState a, EntityState v)
+        {
+            if (a.Bond == null || a.Bond.PartnerId != v.Id)
+                a.Bond = new Bond { PartnerId = v.Id, Strength = 0.1f };
+            float before = a.Bond.Strength;
+            a.Bond.Strength = MathX.Clamp01(a.Bond.Strength + 0.08f);
+            if (before <= 0.7f && a.Bond.Strength > 0.7f)
+            {
+                a.Bond.SinceStrongAt = ctx.Now;
+                ctx.Sim.Journal(ctx.Now,
+                    "Something has changed between me and " + v.Name +
+                    ". We walk the same trails now, and the den feels like ours.",
+                    JournalCategory.Social, 0.85f, 1f, null, v.Id);
+                LineageSystem.MaybeDistillTale(ctx.Sim, "The Bonding", "Sociability", 0.05f,
+                    "bonded with " + v.Name);
+            }
+        }
+
         public override string DescribeReason(BrainContext ctx)
         {
             var v = ctx.FindEntity(ctx.Agent.TargetEntityId);
-            string who = v != null ? v.Name : "a neighbour";
+            string who = v != null ? v.Name : "one of my kind";
             return "It's good to be known by someone — I went to say hello to " + who + ".";
         }
     }
+
+    // -------------------------------------------------------------- SeekBond
+
+    /// <summary>
+    /// Seeking out a bond-mate: adults nurture the pair-bond by spending time
+    /// together. Strong bonds ripen into litters (see LineageSystem.TickBonding).
+    /// </summary>
+    public class SeekBondAction : AgentAction
+    {
+        public override string Name { get { return "SeekBond"; } }
+        public override string Topic { get { return "social"; } }
+
+        private EntityState BondPartner(BrainContext ctx)
+        {
+            var bond = ctx.Agent.Bond;
+            if (bond == null || bond.PartnerId < 0) return null;
+            var e = ctx.FindEntity(bond.PartnerId);
+            return e != null && e.IsAlive && e.Kind == EntityKind.Kindred ? e : null;
+        }
+
+        public override bool CanScore(BrainContext ctx)
+        {
+            var a = ctx.Agent;
+            if (a.Stage != LifeStage.Adult && a.Stage != LifeStage.Elder) return false;
+            if (a.SicknessSeverity > 0.6f) return false;
+            return BondPartner(ctx) != null;
+        }
+
+        public override float Score(BrainContext ctx, List<ScoreComponent> c)
+        {
+            var a = ctx.Agent;
+            var p = BondPartner(ctx);
+            float d = V2.Distance(a.Pos, new V2(p.X, p.Z));
+            Add(c, "bond", a.Bond.Strength, 0.35f);
+            Add(c, "sociability", a.Traits.Sociability, 0.25f);
+            Add(c, "closeness", 1f - Math.Min(d, 120f) / 120f, 0.15f);
+            Add(c, "longing", a.Bond.LitterBorn ? 0.3f : 0.7f, 0.15f);
+            Add(c, "effort", d / 120f, -0.15f);
+            return Total(c);
+        }
+
+        public override void Begin(BrainContext ctx)
+        {
+            var a = ctx.Agent;
+            var p = BondPartner(ctx);
+            a.CurrentGoal = "SeekBond";
+            if (p != null)
+            {
+                a.TargetEntityId = p.Id;
+                MoveTo(ctx, p.X, p.Z, 4f, false);
+                a.CurrentActivity = "going to find " + p.Name;
+            }
+        }
+
+        public override void Update(BrainContext ctx, float dt)
+        {
+            var a = ctx.Agent;
+            var p = BondPartner(ctx);
+            if (p == null) { a.DecisionTimer = 0f; return; }
+            float d = V2.Distance(a.Pos, new V2(p.X, p.Z));
+            if (d > 5f) return; // still walking over
+            Stop(ctx);
+            a.Facing = MathX.YawFromDir(new V2(p.X - a.X, p.Z - a.Z));
+            a.CurrentActivity = "sitting with " + p.Name;
+            // Nurture: time together deepens the bond a little.
+            float before = a.Bond.Strength;
+            a.Bond.Strength = MathX.Clamp01(a.Bond.Strength + dt * 0.008f);
+            if (before <= 0.7f && a.Bond.Strength > 0.7f)
+            {
+                a.Bond.SinceStrongAt = ctx.Now;
+                ctx.Sim.Journal(ctx.Now,
+                    "Something has changed between me and " + p.Name +
+                    ". We walk the same trails now, and the den feels like ours.",
+                    JournalCategory.Social, 0.85f, 1f, null, p.Id);
+            }
+            a.Mood = MathX.Clamp(a.Mood + dt * 0.3f, 0f, 100f);
+            if (a.ActionTimer > 40f) a.DecisionTimer = 0f;
+        }
+
+        public override string DescribeReason(BrainContext ctx)
+        {
+            var p = BondPartner(ctx);
+            string who = p != null ? p.Name : "my bond-mate";
+            return "My heart was set on company — I went to be near " + who + ".";
+        }
+    }
+
 
     // --------------------------------------------------------------- LootRuin
 
@@ -1489,11 +1782,11 @@ namespace Solace.Core
             foreach (var poi in ctx.World.Pois)
             {
                 if (poi.Looted) continue;
-                if (poi.Type != PoiType.RuinSite && poi.Type != PoiType.BrochRuin) continue;
+                if (poi.Type != PoiType.RuinSite && poi.Type != PoiType.InsectileRuin) continue;
                 if (!ctx.Agent.KnownPoiIds.Contains(poi.Id) && !poi.Discovered) continue;
                 float d = V2.Distance(ctx.Agent.Pos, new V2(poi.X, poi.Z));
                 if (d > 450f) continue;
-                float score = (poi.Type == PoiType.BrochRuin ? 1.2f : 0.8f) - d / 300f;
+                float score = (poi.Type == PoiType.InsectileRuin ? 1.2f : 0.8f) - d / 300f;
                 if (score > bestScore) { bestScore = score; best = poi; }
             }
             return best;
@@ -1506,10 +1799,10 @@ namespace Solace.Core
             var a = ctx.Agent;
             var poi = TargetRuin(ctx);
             float d = V2.Distance(a.Pos, new V2(poi.X, poi.Z));
-            Add(c, "curiosity", a.Curiosity / 100f * 0.8f + 0.2f, 0.35f);
-            Add(c, "promise", poi.Type == PoiType.BrochRuin ? 0.85f : 0.55f, 0.25f);
+            Add(c, "curiosity", a.EffectiveCuriosity / 100f * 0.8f + 0.2f, 0.35f);
+            Add(c, "promise", poi.Type == PoiType.InsectileRuin ? 0.85f : 0.55f, 0.25f);
             Add(c, "effort", d / 400f, -0.20f);
-            Add(c, "risk", WolfDanger(ctx, 50f) * 0.5f + a.Traits.Caution * 0.4f, -0.20f);
+            Add(c, "risk", PredatorDanger(ctx, 50f) * 0.5f + a.EffectiveCaution * 0.4f, -0.20f);
             return Total(c);
         }
 
@@ -1536,14 +1829,14 @@ namespace Solace.Core
             Stop(ctx);
             poi.Looted = true;
 
-            // The broch may be denning something.
-            if (poi.Type == PoiType.BrochRuin && ctx.Ev.NextFloat() < 0.30f)
+            // The hollow hive may be denning something.
+            if (poi.Type == PoiType.InsectileRuin && ctx.Ev.NextFloat() < 0.30f)
             {
-                var wolf = new EntityState
+                var predator = new EntityState
                 {
                     Id = ctx.Sim.NextEntityId(),
-                    Kind = EntityKind.Wolf,
-                    Name = "wolf",
+                    Kind = EntityKind.Predator,
+                    Name = "gloom-maw",
                     X = poi.X + ctx.Ev.NextFloat(-12f, 12f),
                     Z = poi.Z + ctx.Ev.NextFloat(-12f, 12f),
                     Health = 70f,
@@ -1552,8 +1845,8 @@ namespace Solace.Core
                     Hunger = 80f,
                     TargetKind = 1 // the agent
                 };
-                ctx.Sim.State.Entities.Add(wolf);
-                ctx.Sim.Journal(ctx.Now, "Something moved in the dark of " + poi.Name + " — a wolf's eyes caught the light.",
+                ctx.Sim.State.Entities.Add(predator);
+                ctx.Sim.Journal(ctx.Now, "Something moved in the dark of " + poi.Name + " — a gloom-maw's eyes caught the light.",
                     JournalCategory.Combat, 0.85f, 1f, poi.Id);
                 a.Traits.Nudge("Caution", 0.02f);
                 a.DecisionTimer = 0f; // reassess immediately (likely Flee)
@@ -1566,16 +1859,16 @@ namespace Solace.Core
             {
                 int n = ctx.Ev.NextInt(1, 3);
                 ctx.Sim.State.Inventory.AddBread(n);
-                found = n + " oatcakes wrapped in cloth";
+                found = n + " seedcakes wrapped in leaves";
             }
             else if (roll < 0.55f)
             {
                 ctx.Sim.State.Inventory.AddPotions(1);
-                found = "a clay vial of bitter herbs";
+                found = "a gourd of bitter root-tea";
             }
             else
             {
-                string[] keepsakes = { "a carved antler", "a rusted brooch", "a smooth river stone", "a black feather", "an old coin" };
+                string[] keepsakes = { "a carved antler", "a chitin shard, smooth as glass", "a smooth river stone", "a black feather", "a spiral shell" };
                 string k = keepsakes[ctx.Ev.NextInt(keepsakes.Length)];
                 ctx.Sim.State.Inventory.AddKeepsake(k);
                 found = k;

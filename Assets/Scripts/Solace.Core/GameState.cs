@@ -27,14 +27,16 @@ namespace Solace.Core
     {
         public uint Ai;
         public uint Event;
-        // Note: the world-gen stream is consumed entirely during generation,
-        // so it needs no persisted position.
+        public uint Lineage;  // aging, sickness, kits, bonding, succession
+        public uint Colossus; // colossi drift
 
         public JsonObject ToJson()
         {
             var o = new JsonObject();
             o.Add("ai", Ai);
             o.Add("event", Event);
+            o.Add("lineage", Lineage);
+            o.Add("colossus", Colossus);
             return o;
         }
 
@@ -43,7 +45,9 @@ namespace Solace.Core
             return new RngStates
             {
                 Ai = JsonHelpers.GetUInt(o, "ai", 0),
-                Event = JsonHelpers.GetUInt(o, "event", 0)
+                Event = JsonHelpers.GetUInt(o, "event", 0),
+                Lineage = JsonHelpers.GetUInt(o, "lineage", 0),
+                Colossus = JsonHelpers.GetUInt(o, "colossus", 0)
             };
         }
     }
@@ -114,7 +118,7 @@ namespace Solace.Core
     /// </summary>
     public class GameState
     {
-        public const int SchemaVersion = 1;
+        public const int SchemaVersion = 2;
 
         public int Seed;
         public float ElapsedSeconds;   // game seconds since the life began
@@ -125,6 +129,10 @@ namespace Solace.Core
         public WorldData World;
         public AgentState Agent;
         public List<EntityState> Entities = new List<EntityState>();
+        /// <summary>The living kits of the current generation's den.</summary>
+        public List<KitState> Kits = new List<KitState>();
+        /// <summary>The lineage: generations, chapters, tales, kin.</summary>
+        public LineageState Lineage = new LineageState();
         public Journal Journal = new Journal();
         public BeliefStore Beliefs = new BeliefStore();
         public SocialMemory Social = new SocialMemory();
@@ -169,6 +177,10 @@ namespace Solace.Core
             var ea = new JsonArray();
             for (int i = 0; i < Entities.Count; i++) ea.Add(Entities[i].ToJson());
             o.Add("entities", ea);
+            var ka = new JsonArray();
+            for (int i = 0; i < Kits.Count; i++) ka.Add(Kits[i].ToJson());
+            o.Add("kits", ka);
+            o.Add("lineage", Lineage.ToJson());
             o.Add("journal", Journal.ToJson());
             o.Add("beliefs", Beliefs.ToJson());
             o.Add("social", Social.ToJson());
@@ -184,7 +196,7 @@ namespace Solace.Core
         public static GameState FromJson(JsonObject o)
         {
             int schema = JsonHelpers.GetInt(o, "schemaVersion", 1);
-            if (schema != SchemaVersion)
+            if (schema < 1 || schema > SchemaVersion)
                 throw new JsonParseException("Unsupported save schema version: " + schema);
             var s = new GameState();
             s.Seed = JsonHelpers.GetInt(o, "seed", 0);
@@ -197,6 +209,16 @@ namespace Solace.Core
             var ea = o["entities"].AsArray();
             s.Entities = new List<EntityState>(ea.Count);
             for (int i = 0; i < ea.Count; i++) s.Entities.Add(EntityState.FromJson(ea[i].AsObject()));
+            JsonValue kv;
+            if (o.TryGet("kits", out kv) && !kv.IsNull)
+            {
+                var kar = kv.AsArray();
+                s.Kits = new List<KitState>(kar.Count);
+                for (int i = 0; i < kar.Count; i++) s.Kits.Add(KitState.FromJson(kar[i].AsObject()));
+            }
+            JsonValue lv;
+            s.Lineage = o.TryGet("lineage", out lv) && !lv.IsNull
+                ? LineageState.FromJson(lv.AsObject()) : new LineageState();
             s.Journal = Journal.FromJson(o["journal"].AsObject());
             s.Beliefs = BeliefStore.FromJson(o["beliefs"].AsObject());
             s.Social = SocialMemory.FromJson(o["social"].AsObject());

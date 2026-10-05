@@ -182,7 +182,7 @@ namespace Solace.Core
                 case Weather.Clear: return "the sky is clear";
                 case Weather.Cloudy: return "cloud is piled over the fell";
                 case Weather.Rain: return "rain is falling soft on the heather";
-                case Weather.Storm: return "a storm is working through the glen";
+                case Weather.Storm: return "a storm is working through the vale";
                 default: return "the weather is turning";
             }
         }
@@ -199,13 +199,13 @@ namespace Solace.Core
         {
             switch (b)
             {
-                case Biome.Moorland: return "out on the open moor";
-                case Biome.Pinewood: return "in among the pines";
+                case Biome.Mistmoor: return "out on the mistmoor";
+                case Biome.Foxpine: return "in among the pines";
                 case Biome.FellCrag: return "up on the crag";
                 case Biome.SnowPeak: return "high where the snow holds";
                 case Biome.Riverbank: return "down by the water";
-                case Biome.HamletGrounds: return "in the hamlet";
-                default: return "out in the glen";
+                case Biome.DenGrounds: return "at the den";
+                default: return "out in the vale";
             }
         }
 
@@ -229,7 +229,7 @@ namespace Solace.Core
             var a = s.Agent;
             if (a.Hunger > 70f) return "My stomach is empty and it's all I can think about.";
             if (a.Thirst > 70f) return "I need water soon.";
-            if (a.Energy < 25f) return "I'm worn through — I'll need to rest.";
+            if (a.Energy < 25f) return "My light is guttering — I'll need to rest and let it burn back up.";
             if (a.Health < 50f) return "I'm hurt, and moving carefully.";
             if (a.Hunger > 45f) return "I could eat.";
             return "";
@@ -262,7 +262,7 @@ namespace Solace.Core
                 "What brings you by?",
                 s.Companion.Level >= RelationshipLevel.Friend
                     ? "It's good to see you. Really."
-                    : "How are you finding the glen today?");
+                    : "How are you finding the vale today?");
             return opener + " " + tail;
         }
 
@@ -270,7 +270,7 @@ namespace Solace.Core
         {
             string[] lines =
             {
-                "Rest well. The glen will keep — and so will I.",
+                "Rest well. The vale will keep — and so will I.",
                 "Go on, then. I'll be here, living.",
                 "Goodbye for now. Don't worry about me; worry is my job."
             };
@@ -280,10 +280,32 @@ namespace Solace.Core
             return line;
         }
 
+        private static string GlowPhrase(AgentState a)
+        {
+            float g = a.Glow;
+            if (g > 0.85f) return "My light is burning bright.";
+            if (g > 0.6f) return "My light is steady.";
+            if (g > 0.35f) return "My light is running thin.";
+            return "My light is barely a coal — I need rest and food, soon.";
+        }
+
+        private static string AgePhrase(AgentState a)
+        {
+            var stage = LineageSystem.StageFor(a.Age, a.LifespanYears);
+            switch (stage)
+            {
+                case LifeStage.Kit: return "a kit, " + ((int)(a.Age * 12f)) + " months";
+                case LifeStage.Juvenile: return ((int)a.Age) + " years and still learning";
+                case LifeStage.Elder: return "old, " + ((int)a.Age) + " years";
+                default: return ((int)a.Age) + " years";
+            }
+        }
+
         private static string WhoAreYou(GameState s)
         {
             return "I'm Solace. I live in " + s.World.ValleyName + " — I walk it, I get hungry in it, " +
-                   "I remember it. You're the one who watches, and sometimes the one I talk to. " +
+                   "I remember it. My light is my life; my tales are my children's instincts. " +
+                   "You're the one who watches, and sometimes the one I talk to. " +
                    "That's the whole of it, and it's enough.";
         }
 
@@ -300,7 +322,7 @@ namespace Solace.Core
         {
             var a = s.Agent;
             if (!a.IsAlive)
-                return "I'm gone. The glen keeps going without me — that's the deal we all sign.";
+                return "I'm gone — but the line goes on. Find my eldest kit and keep watching. That's the deal we all sign.";
             var sb = new StringBuilder();
             sb.Append("I'm ");
             sb.Append(string.IsNullOrEmpty(a.CurrentActivity) ? "between things" : a.CurrentActivity);
@@ -313,6 +335,18 @@ namespace Solace.Core
             sb.Append(".");
             string need = NeedSentence(s);
             if (need.Length > 0) { sb.Append(" "); sb.Append(need); }
+            // The readable signals: glow, age, generation.
+            sb.Append(" ");
+            sb.Append(GlowPhrase(a));
+            sb.Append(" I'm ");
+            sb.Append(AgePhrase(a));
+            sb.Append(", generation ");
+            sb.Append(s.Lineage.Generation);
+            sb.Append(" of the line.");
+            if (s.World.NightRiverGlow)
+                sb.Append(s.IsNight
+                    ? " The river is glowing tonight."
+                    : " The river will glow again tonight.");
             if (!string.IsNullOrEmpty(a.CurrentGoal))
             {
                 sb.Append(" ");
@@ -339,6 +373,8 @@ namespace Solace.Core
                 case "Flee": return "getting away safely";
                 case "Fight": return "surviving this";
                 case "Loot": return "searching the old places";
+                case "SeekBond": return "finding the one I walk beside";
+                case "Tale": return "passing on the tales";
                 default: return "whatever comes next";
             }
         }
@@ -471,7 +507,7 @@ namespace Solace.Core
                 if (b.Claim.ToLowerInvariant().Contains(subject))
                     return Capitalize(b.Claim) + ". " + Capitalize(SourcePhrase(b.Source)) + ".";
             }
-            return "I don't know " + subject + ". If it's out there in the glen, maybe I'll learn it — or maybe you'll tell me.";
+            return "I don't know " + subject + ". If it's out there in the vale, I'll learn it — or maybe you'll tell me.";
         }
 
         private static string SourcePhrase(string source)
@@ -515,10 +551,11 @@ namespace Solace.Core
             if (HasAny(low, "rest", "sleep", "tired", "nap")) return "rest";
             if (HasAny(low, "eat", "food", "hungry", "berries", "bread")) return "eat";
             if (HasAny(low, "drink", "water", "thirst")) return "drink";
-            if (HasAny(low, "ruin", "tower", "broch", "stones", "cairn")) return "ruin";
+            if (HasAny(low, "ruin", "hive", "chitin", "stones", "cairn", "old ones")) return "ruin";
             if (HasAny(low, "explore", "look", "discover", "find", "adventure", "go")) return "explore";
-            if (HasAny(low, "village", "hamlet", "mira", "people", "talk", "greet", "friend")) return "social";
-            if (HasAny(low, "wolf", "danger", "careful", "run", "fight", "safe", "hide")) return "safety";
+            if (HasAny(low, "kindred", "den", "vesper", "moth", "ember", "people", "talk", "greet", "friend", "bond", "mate")) return "social";
+            if (HasAny(low, "gloom", "danger", "careful", "run", "fight", "safe", "hide", "predator")) return "safety";
+            if (HasAny(low, "kit", "cub", "young", "tale", "stories", "generation", "die", "death", "old")) return "lineage";
             if (HasAny(low, "deer", "watch", "hare", "rabbit")) return "watch";
             return "explore";
         }
@@ -535,7 +572,8 @@ namespace Solace.Core
                 case "drink": topicBit = "drinking"; break;
                 case "explore": topicBit = "exploring"; break;
                 case "ruin": topicBit = "the old places"; break;
-                case "social": topicBit = "seeing people"; break;
+                case "social": topicBit = "seeing my kindred"; break;
+                case "lineage": topicBit = "the line, the kits, the tales"; break;
                 case "safety": topicBit = "being careful"; break;
                 case "watch": topicBit = "watching the wild"; break;
                 default: topicBit = "that"; break;
@@ -566,7 +604,7 @@ namespace Solace.Core
             {
                 "I'm not sure what you mean — but I'm here, " + WhereAmI(s) + ", " + MoodPhrase(a.Mood) + ".",
                 "Hm. Say it another way? Right now I'm " + (string.IsNullOrEmpty(a.CurrentActivity) ? "between things" : a.CurrentActivity) + ".",
-                "I don't follow. The glen is simpler than words, mostly."
+                "I don't follow. The vale is simpler than words, mostly."
             };
             string line = lines[Variant(s, "reflect" + raw, lines.Length)];
             if (s.Companion.Level >= RelationshipLevel.Familiar)

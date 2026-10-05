@@ -175,7 +175,7 @@ namespace Solace.Core
     public class PresenceRecord
     {
         public float Time;
-        public string Context; // e.g. "during the storm", "at the broch"
+        public string Context; // e.g. "during the storm", "at the hollow hive"
 
         public JsonObject ToJson()
         {

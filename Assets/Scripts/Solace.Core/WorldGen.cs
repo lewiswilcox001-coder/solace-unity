@@ -1,13 +1,15 @@
 // Solace.Core — deterministic world generation.
 //
-// Setting: a misty highland glen. A river winds the length of the valley and
-// widens into a still loch; heather moorland climbs to pinewoods, then fell
-// crag and snow. A small hamlet keeps peat fires lit. On the high fell stands
-// an ancient broch — a stone tower no one living built. Cairns mark the old
-// trails, bothy fires shelter travellers, berries ripen by the water.
+// Setting: a misty highland vale where no humans ever existed. A river winds
+// the length of the valley and widens into a still loch; mistmoor climbs to
+// foxpine woods, then fell crag and snow. A den-site of the lantern-fox kind
+// keeps ember-hollows warm. On the high fell stands a hollow hive —
+// chitin-arch ruins of the insectile ones, gone long ago. Cairns mark the old
+// trails, glow-moss hollows shelter travellers, glowberries ripen by the
+// water, and tree-walkers cross the valley slow as weather.
 //
 // Everything here is generated from the world-gen RNG stream only, so the
-// same seed always builds the same glen on every platform.
+// same seed always builds the same vale on every platform.
 using System;
 using System.Collections.Generic;
 
@@ -16,23 +18,23 @@ namespace Solace.Core
     /// <summary>Biome roles. Each has a clear gameplay affordance.</summary>
     public enum Biome
     {
-        Moorland,      // open heather — foraging, hares, easy travel
-        Pinewood,      // forest — shelter, deer, berries, wolves
-        FellCrag,      // rocky high ground — views, danger, the broch
-        SnowPeak,      // extreme high — harsh, rarely worth the climb
-        Riverbank,     // shore and shallow water — drinking, fishing stories
-        HamletGrounds  // settlement — people, hearths, safety
+        Mistmoor,      // 0 — open misty heather: foraging, hares, easy travel
+        Foxpine,       // 1 — pine forest: shelter, deer, glowberries, gloom-maws
+        FellCrag,      // 2 — rocky high ground: views, danger, the hollow hive
+        SnowPeak,      // 3 — extreme high: harsh, rarely worth the climb
+        Riverbank,     // 4 — shore and shallow water: drinking, night-glow
+        DenGrounds     // 5 — around the den-site: kindred, ember-hollows, safety
     }
 
     public enum PoiType
     {
-        Hamlet,      // the social hearth: crofts, peat fires, villagers
-        BrochRuin,   // ancient stone tower on the fell — the great mystery
-        Cairn,       // waystone cairn at a trail fork
-        Campfire,    // traveller camp / bothy fire — rest and shelter
-        BerryBush,   // harvestable food (Stock = berries remaining)
-        RuinSite,    // lesser ruins: standing stones, old shieling
-        Overlook     // high viewpoint over the glen
+        Den,            // 0 — the social hearth: den-site, ember-hollows, kindred
+        InsectileRuin,  // 1 — chitin-arch ruins on the fell: the great mystery
+        Cairn,          // 2 — piled stones at a trail fork
+        EmberHollow,    // 3 — warm glow-moss hollow: rest and shelter
+        GlowberryBush,  // 4 — harvestable food (Stock = berries remaining)
+        RuinSite,       // 5 — lesser ruins: husk circles, old burrow-arches
+        Overlook        // 6 — high viewpoint over the vale
     }
 
     /// <summary>A named place in the world. Discovery state is per-life.</summary>
@@ -47,7 +49,7 @@ namespace Solace.Core
         public bool Discovered;    // Solace has been here / seen it clearly
         public bool LearnedName;   // Solace knows its true name
         public int Stock;          // berry bushes: berries remaining
-        public bool Looted;        // ruin sites / broch: already searched
+        public bool Looted;        // ruin sites / hive: already searched
 
         public string DisplayName
         {
@@ -56,11 +58,11 @@ namespace Solace.Core
                 if (LearnedName) return Name;
                 switch (Type)
                 {
-                    case PoiType.Hamlet: return "the hamlet";
-                    case PoiType.BrochRuin: return "the old tower on the fell";
+                    case PoiType.Den: return "the den";
+                    case PoiType.InsectileRuin: return "the hollow hive on the fell";
                     case PoiType.Cairn: return "a piled cairn";
-                    case PoiType.Campfire: return "a campfire site";
-                    case PoiType.BerryBush: return "a berry bush";
+                    case PoiType.EmberHollow: return "an ember-hollow";
+                    case PoiType.GlowberryBush: return "a glowberry bush";
                     case PoiType.RuinSite: return "some old stones";
                     case PoiType.Overlook: return "a high viewpoint";
                     default: return "an unfamiliar place";
@@ -88,7 +90,13 @@ namespace Solace.Core
         {
             var p = new PointOfInterest();
             p.Id = JsonHelpers.GetInt(o, "id", 0);
-            p.Type = (PoiType)Enum.Parse(typeof(PoiType), JsonHelpers.GetString(o, "type", "Cairn"));
+            string typeName = JsonHelpers.GetString(o, "type", "Cairn");
+            // Pre-reframe save compat.
+            if (typeName == "Hamlet") typeName = "Den";
+            else if (typeName == "BrochRuin") typeName = "InsectileRuin";
+            else if (typeName == "Campfire") typeName = "EmberHollow";
+            else if (typeName == "BerryBush") typeName = "GlowberryBush";
+            p.Type = (PoiType)Enum.Parse(typeof(PoiType), typeName);
             p.Name = JsonHelpers.GetString(o, "name", "?");
             p.X = JsonHelpers.GetFloat(o, "x", 0f);
             p.Z = JsonHelpers.GetFloat(o, "z", 0f);
@@ -109,7 +117,7 @@ namespace Solace.Core
     }
 
     /// <summary>
-    /// The generated glen: heightmap, moisture, biomes, river, trails, POIs.
+    /// The generated vale: heightmap, moisture, biomes, river, trails, POIs.
     /// Fully serializable; the save stores it verbatim.
     /// </summary>
     public class WorldData
@@ -130,8 +138,12 @@ namespace Solace.Core
         public V2 LakeCenter;
         public float LakeRadius;
         public string ValleyName = "";
-        public string HamletName = "";
-        public string BrochName = "";
+        public string DenName = "";
+        public string HiveName = "";
+        /// <summary>Rivers glow at night — a sim flag the presentation reads.</summary>
+        public bool NightRiverGlow = true;
+        /// <summary>The colossal slow life: tree-walkers and seed-isles.</summary>
+        public List<ColossusState> Colossi = new List<ColossusState>();
 
         public float HalfSize { get { return SizeMeters * 0.5f; } }
 
@@ -227,8 +239,12 @@ namespace Solace.Core
             o.Add("lake", V2ToJson(LakeCenter));
             o.Add("lakeRadius", LakeRadius);
             o.Add("valleyName", ValleyName);
-            o.Add("hamletName", HamletName);
-            o.Add("brochName", BrochName);
+            o.Add("denName", DenName);
+            o.Add("hiveName", HiveName);
+            o.Add("nightRiverGlow", NightRiverGlow);
+            var coa = new JsonArray();
+            for (int i = 0; i < Colossi.Count; i++) coa.Add(Colossi[i].ToJson());
+            o.Add("colossi", coa);
             return o;
         }
 
@@ -284,27 +300,38 @@ namespace Solace.Core
             w.LakeCenter = V2FromJson(o["lake"].AsObject());
             w.LakeRadius = JsonHelpers.GetFloat(o, "lakeRadius", 20f);
             w.ValleyName = JsonHelpers.GetString(o, "valleyName", "");
-            w.HamletName = JsonHelpers.GetString(o, "hamletName", "");
-            w.BrochName = JsonHelpers.GetString(o, "brochName", "");
+            // Pre-reframe save compat: hamletName -> denName, brochName -> hiveName.
+            w.DenName = JsonHelpers.GetString(o, "denName",
+                JsonHelpers.GetString(o, "hamletName", ""));
+            w.HiveName = JsonHelpers.GetString(o, "hiveName",
+                JsonHelpers.GetString(o, "brochName", ""));
+            w.NightRiverGlow = JsonHelpers.GetBool(o, "nightRiverGlow", true);
+            JsonValue cov;
+            if (o.TryGet("colossi", out cov) && !cov.IsNull)
+            {
+                var coa = cov.AsArray();
+                for (int i = 0; i < coa.Count; i++)
+                    w.Colossi.Add(ColossusState.FromJson(coa[i].AsObject()));
+            }
             return w;
         }
     }
 
     /// <summary>
-    /// Builds the glen. Uses ONLY the world-gen RNG stream (SeededRandom.Derive
+    /// Builds the vale. Uses ONLY the world-gen RNG stream (SeededRandom.Derive
     /// with domain "world") plus deterministic noise — never any other stream.
     /// </summary>
     public static class WorldGenerator
     {
         // Authored name pools — place identity is picked deterministically.
         private static readonly string[] ValleyNames =
-            { "Glen Vane", "Glen Morven", "Strath Aline", "Glen Dubh", "Glen Halladale", "Srath Mor" };
-        private static readonly string[] HamletNames =
-            { "Dunvane", "Kilmory", "Auchterlin", "Balnamoon", "Craigduff", "Tomnavin" };
-        private static readonly string[] BrochNames =
-            { "the Broch of Cairston", "Dun Athad", "the Grey Tower", "Caisteal Dubh", "Dun Mor" };
+            { "Glen Vane", "Glen Morven", "Strath Aline", "Glen Dubh", "Vesper Vale", "Mothmere" };
+        private static readonly string[] DenNames =
+            { "Emberden", "Stillden", "Mossden", "Foxholm", "Hollowden", "Thistleden" };
+        private static readonly string[] HiveNames =
+            { "the Hollow Hive", "the Chitin Spire", "Vessaril", "the Carapace Vault", "Mothenor" };
         private static readonly string[] RuinNames =
-            { "the Clachan Stones", "the old shieling", "the Shepherd's Cairn", "the drowned croft" };
+            { "the chitin field", "the old burrow-arch", "the husk circle", "the drowned hollow" };
 
         public static WorldData Generate(WorldConfig config)
         {
@@ -321,14 +348,15 @@ namespace Solace.Core
             float half = w.HalfSize;
 
             w.ValleyName = rng.Pick(ValleyNames);
-            w.HamletName = rng.Pick(HamletNames);
-            w.BrochName = rng.Pick(BrochNames);
+            w.DenName = rng.Pick(DenNames);
+            w.HiveName = rng.Pick(HiveNames);
+            w.NightRiverGlow = rng.NextFloat() < 0.85f;
 
             w.Heights = new float[res * res];
             w.Moisture = new float[res * res];
             w.Biomes = new Biome[res * res];
 
-            // 1. Base terrain: glen floor between rising fells, enclosed at the ends.
+            // 1. Base terrain: vale floor between rising fells, enclosed at the ends.
             for (int iz = 0; iz < res; iz++)
             {
                 for (int ix = 0; ix < res; ix++)
@@ -371,42 +399,45 @@ namespace Solace.Core
 
             CarveRiver(w);
 
-            // 3. Hamlet: flat ground near the river, upper third of the glen.
-            PointOfInterest hamlet = PlaceHamlet(w, rng);
-            w.Pois.Add(hamlet);
+            // 3. Den: flat ground near the river, upper third of the vale.
+            PointOfInterest den = PlaceDen(w, rng);
+            w.Pois.Add(den);
 
-            // 4. Broch: high fell, far from the hamlet.
-            PointOfInterest broch = PlaceBroch(w, rng, hamlet);
-            w.Pois.Add(broch);
+            // 4. Hollow hive: high fell, far from the den.
+            PointOfInterest hive = PlaceHive(w, rng, den);
+            w.Pois.Add(hive);
 
-            // 5. Trails: spawn → hamlet → (cairn fork) → broch.
-            V2 fork = BuildTrails(w, hamlet, broch);
+            // 5. Trails: spawn → den → (cairn fork) → hive.
+            V2 fork = BuildTrails(w, den, hive);
             CarveTrail(w);
 
             // 6. Cairn at the trail fork.
             PointOfInterest cairn = PlaceCairn(w, fork);
             w.Pois.Add(cairn);
 
-            // 7. Campfires: hamlet edge, loch shore, bothy site on the fell trail.
-            foreach (var cf in PlaceCampfires(w, rng, hamlet))
-                w.Pois.Add(cf);
+            // 7. Ember-hollows: den edge, loch shore, high site on the fell trail.
+            foreach (var eh in PlaceEmberHollows(w, rng, den))
+                w.Pois.Add(eh);
 
-            // 8. Berry bushes.
-            foreach (var b in PlaceBerryBushes(w, rng, hamlet))
+            // 8. Glowberry bushes.
+            foreach (var b in PlaceGlowberryBushes(w, rng, den))
                 w.Pois.Add(b);
 
-            // 9. Ruin sites: standing stones + old shieling.
-            foreach (var r in PlaceRuinSites(w, rng, hamlet, broch))
+            // 9. Ruin sites: husk circle + old burrow-arch.
+            foreach (var r in PlaceRuinSites(w, rng, den, hive))
                 w.Pois.Add(r);
 
             // 10. Overlook.
-            w.Pois.Add(PlaceOverlook(w, rng, hamlet));
+            w.Pois.Add(PlaceOverlook(w, rng, den));
 
-            // 11. Spawn: at the hamlet edge, on dry land.
-            w.SpawnPoint = FindLandNear(w, hamlet.X + 14f, hamlet.Z + 8f);
+            // 11. Spawn: at the den edge, on dry land.
+            w.SpawnPoint = FindLandNear(w, den.X + 14f, den.Z + 8f);
 
             // 12. Biomes.
-            AssignBiomes(w, hamlet);
+            AssignBiomes(w, den);
+
+            // 13b. Colossal life: tree-walkers and seed-isles on their slow routes.
+            PlaceColossi(w);
 
             // 13. Ensure spawn + POI ground is sane (not water, not cliff).
             foreach (var p in w.Pois)
@@ -513,9 +544,9 @@ namespace Solace.Core
             };
         }
 
-        private static PointOfInterest PlaceHamlet(WorldData w, SeededRandom rng)
+        private static PointOfInterest PlaceDen(WorldData w, SeededRandom rng)
         {
-            // Near the river, upper-middle glen. Score candidates by flatness.
+            // Near the river, upper-middle vale. Score candidates by flatness.
             float bestScore = float.MinValue;
             float bx = 0f, bz = 0f;
             for (int t = 0; t < 28; t++)
@@ -533,13 +564,13 @@ namespace Solace.Core
                 float score = -slope * 10f - Math.Abs(h - 10f) * 0.05f + rng.NextFloat(0f, 0.5f);
                 if (score > bestScore) { bestScore = score; bx = x; bz = z; }
             }
-            var p = NewPoi(PoiType.Hamlet, w.HamletName, bx, bz, 26f);
+            var p = NewPoi(PoiType.Den, w.DenName, bx, bz, 26f);
             p.Discovered = true;   // home is known
             p.LearnedName = true;
             return p;
         }
 
-        private static PointOfInterest PlaceBroch(WorldData w, SeededRandom rng, PointOfInterest hamlet)
+        private static PointOfInterest PlaceHive(WorldData w, SeededRandom rng, PointOfInterest den)
         {
             float bestH = float.MinValue;
             float bx = 0f, bz = 0f;
@@ -547,24 +578,24 @@ namespace Solace.Core
             {
                 float x = rng.NextFloat(-w.HalfSize + 40f, w.HalfSize - 40f);
                 float z = rng.NextFloat(-w.HalfSize + 40f, w.HalfSize - 40f);
-                float dx = x - hamlet.X, dz = z - hamlet.Z;
+                float dx = x - den.X, dz = z - den.Z;
                 if (dx * dx + dz * dz < 200f * 200f) continue;
                 float h = w.SampleHeight(x, z);
                 if (h < 30f) continue;
                 if (h > bestH) { bestH = h; bx = x; bz = z; }
             }
-            var p = NewPoi(PoiType.BrochRuin, w.BrochName, bx, bz, 16f);
+            var p = NewPoi(PoiType.InsectileRuin, w.HiveName, bx, bz, 16f);
             return p;
         }
 
-        private static V2 BuildTrails(WorldData w, PointOfInterest hamlet, PointOfInterest broch)
+        private static V2 BuildTrails(WorldData w, PointOfInterest den, PointOfInterest hive)
         {
-            // Trail: spawn-side → hamlet → fork → broch. Gentle switchback feel
+            // Trail: spawn-side → den → fork → hive. Gentle switchback feel
             // via midpoint offsets away from water and steep ground.
-            var a = new V2(hamlet.X + 14f, hamlet.Z + 8f);
-            var b = new V2(hamlet.X, hamlet.Z);
-            var fork = V2.Lerp(b, new V2(broch.X, broch.Z), 0.35f);
-            var c = new V2(broch.X, broch.Z);
+            var a = new V2(den.X + 14f, den.Z + 8f);
+            var b = new V2(den.X, den.Z);
+            var fork = V2.Lerp(b, new V2(hive.X, hive.Z), 0.35f);
+            var c = new V2(hive.X, hive.Z);
 
             var ctrl = new List<V2>();
             ctrl.Add(a);
@@ -629,26 +660,26 @@ namespace Solace.Core
             return NewPoi(PoiType.Cairn, "the fork cairn", p.X, p.Z, 6f);
         }
 
-        private static List<PointOfInterest> PlaceCampfires(WorldData w, SeededRandom rng, PointOfInterest hamlet)
+        private static List<PointOfInterest> PlaceEmberHollows(WorldData w, SeededRandom rng, PointOfInterest den)
         {
             var list = new List<PointOfInterest>();
-            // Traveller camp at the hamlet edge.
-            V2 p1 = FindLandNear(w, hamlet.X - 30f, hamlet.Z + 12f);
-            list.Add(NewPoi(PoiType.Campfire, "the traveller's fire", p1.X, p1.Z, 7f));
-            // Loch shore bothy.
+            // Ember-hollow at the den edge.
+            V2 p1 = FindLandNear(w, den.X - 30f, den.Z + 12f);
+            list.Add(NewPoi(PoiType.EmberHollow, "the ember-deep", p1.X, p1.Z, 7f));
+            // Loch shore hollow.
             float ang = rng.NextFloat(0f, MathF.PI * 2f);
             V2 p2 = FindLandNear(w, w.LakeCenter.X + MathF.Cos(ang) * (w.LakeRadius + 10f),
                                     w.LakeCenter.Z + MathF.Sin(ang) * (w.LakeRadius + 10f));
-            list.Add(NewPoi(PoiType.Campfire, "the lochside bothy", p2.X, p2.Z, 7f));
-            // High bothy on the fell trail.
+            list.Add(NewPoi(PoiType.EmberHollow, "the lochside hollow", p2.X, p2.Z, 7f));
+            // High hollow on the fell trail.
             int mid = w.TrailPath.Count * 3 / 4;
             V2 tp = w.TrailPath[mid];
             V2 p3 = FindLandNear(w, tp.X + 8f, tp.Z - 6f);
-            list.Add(NewPoi(PoiType.Campfire, "the high bothy", p3.X, p3.Z, 7f));
+            list.Add(NewPoi(PoiType.EmberHollow, "the high hollow", p3.X, p3.Z, 7f));
             return list;
         }
 
-        private static List<PointOfInterest> PlaceBerryBushes(WorldData w, SeededRandom rng, PointOfInterest hamlet)
+        private static List<PointOfInterest> PlaceGlowberryBushes(WorldData w, SeededRandom rng, PointOfInterest den)
         {
             var list = new List<PointOfInterest>();
             int target = rng.NextInt(9, 13);
@@ -662,7 +693,7 @@ namespace Solace.Core
                 if (w.SlopeAt(x, z) > 0.45f) continue;
                 float m = w.SampleMoisture(x, z);
                 if (m < 0.5f) continue;
-                float dx = x - hamlet.X, dz = z - hamlet.Z;
+                float dx = x - den.X, dz = z - den.Z;
                 if (dx * dx + dz * dz > 230f * 230f) continue;
                 bool tooClose = false;
                 for (int i = 0; i < list.Count; i++)
@@ -671,14 +702,14 @@ namespace Solace.Core
                     if (ddx * ddx + ddz * ddz < 25f * 25f) { tooClose = true; break; }
                 }
                 if (tooClose) continue;
-                var b = NewPoi(PoiType.BerryBush, "berry bush", x, z, 4f);
+                var b = NewPoi(PoiType.GlowberryBush, "glowberry bush", x, z, 4f);
                 b.Stock = rng.NextInt(3, 9);
                 list.Add(b);
             }
             return list;
         }
 
-        private static List<PointOfInterest> PlaceRuinSites(WorldData w, SeededRandom rng, PointOfInterest hamlet, PointOfInterest broch)
+        private static List<PointOfInterest> PlaceRuinSites(WorldData w, SeededRandom rng, PointOfInterest den, PointOfInterest hive)
         {
             var list = new List<PointOfInterest>();
             // Standing stones on open moor.
@@ -691,7 +722,7 @@ namespace Solace.Core
                 float h = w.SampleHeight(x, z);
                 if (h < 9f || h > 26f) continue;
                 if (w.SlopeAt(x, z) > 0.35f) continue;
-                float dx = x - hamlet.X, dz = z - hamlet.Z;
+                float dx = x - den.X, dz = z - den.Z;
                 float dh = dx * dx + dz * dz;
                 if (dh < 90f * 90f) continue;
                 float score = -Math.Abs(h - 16f) + rng.NextFloat(0f, 4f);
@@ -700,7 +731,7 @@ namespace Solace.Core
             string n1 = rng.Pick(RuinNames);
             list.Add(NewPoi(PoiType.RuinSite, n1, sx, sz, 10f));
 
-            // Old shieling hut, closer to the hamlet trail.
+            // An old burrow-arch, closer to the den trail.
             float bx = 0f, bz = 0f; best = float.MinValue;
             for (int t = 0; t < 60; t++)
             {
@@ -709,19 +740,67 @@ namespace Solace.Core
                 float h = w.SampleHeight(x, z);
                 if (h < WorldData.WaterLevel + 1.2f || h > 24f) continue;
                 if (w.SlopeAt(x, z) > 0.4f) continue;
-                float dx = x - hamlet.X, dz = z - hamlet.Z;
+                float dx = x - den.X, dz = z - den.Z;
                 float dh = dx * dx + dz * dz;
                 if (dh < 60f * 60f || dh > 200f * 200f) continue;
                 float score = -w.SlopeAt(x, z) * 8f + rng.NextFloat(0f, 2f);
                 if (score > best) { best = score; bx = x; bz = z; }
             }
             string n2 = rng.Pick(RuinNames);
-            if (n2 == n1) n2 = "the old shieling";
+            if (n2 == n1) n2 = "the old burrow-arch";
             list.Add(NewPoi(PoiType.RuinSite, n2, bx, bz, 9f));
             return list;
         }
 
-        private static PointOfInterest PlaceOverlook(WorldData w, SeededRandom rng, PointOfInterest hamlet)
+        /// <summary>
+        /// Places the colossal slow life: tree-walkers on seeded land routes,
+        /// seed-isles drifting on the loch. Uses its own derived stream so the
+        /// world-gen stream is untouched — same seed, same colossi, anywhere.
+        /// </summary>
+        private static void PlaceColossi(WorldData w)
+        {
+            var rng = SeededRandom.Derive(w.Seed, "colossus");
+            int id = 0;
+            // Two tree-walkers: kilometer-tall migrating trees, slow as weather.
+            for (int i = 0; i < 2; i++)
+            {
+                V2 spot = new V2(0f, 0f);
+                for (int t = 0; t < 60; t++)
+                {
+                    float x = rng.NextFloat(-w.HalfSize + 60f, w.HalfSize - 60f);
+                    float z = rng.NextFloat(-w.HalfSize + 60f, w.HalfSize - 60f);
+                    if (!w.IsWater(x, z)) { spot = new V2(x, z); break; }
+                    spot = new V2(x, z);
+                }
+                w.Colossi.Add(new ColossusState
+                {
+                    Id = id++,
+                    Kind = ColossusKind.TreeWalker,
+                    X = spot.X, Z = spot.Z,
+                    Heading = rng.NextFloat(0f, MathF.PI * 2f),
+                    SpeedMPerDay = rng.NextFloat(25f, 45f),
+                    RadiusMeters = 500f
+                });
+            }
+            // Two seed-isles drifting on the loch.
+            for (int i = 0; i < 2; i++)
+            {
+                float ang = rng.NextFloat(0f, MathF.PI * 2f);
+                float r = rng.NextFloat(0.2f, 0.9f) * w.LakeRadius;
+                w.Colossi.Add(new ColossusState
+                {
+                    Id = id++,
+                    Kind = ColossusKind.SeedIsle,
+                    X = w.LakeCenter.X + (float)Math.Cos(ang) * r,
+                    Z = w.LakeCenter.Z + (float)Math.Sin(ang) * r,
+                    Heading = rng.NextFloat(0f, MathF.PI * 2f),
+                    SpeedMPerDay = rng.NextFloat(8f, 18f),
+                    RadiusMeters = 35f
+                });
+            }
+        }
+
+        private static PointOfInterest PlaceOverlook(WorldData w, SeededRandom rng, PointOfInterest den)
         {
             float best = float.MinValue;
             float ox = 0f, oz = 0f;
@@ -731,7 +810,7 @@ namespace Solace.Core
                 float z = rng.NextFloat(-w.HalfSize + 40f, w.HalfSize - 40f);
                 float h = w.SampleHeight(x, z);
                 if (h < 26f) continue;
-                float dx = x - hamlet.X, dz = z - hamlet.Z;
+                float dx = x - den.X, dz = z - den.Z;
                 if (dx * dx + dz * dz < 110f * 110f) continue;
                 float score = h + rng.NextFloat(0f, 6f);
                 if (score > best) { best = score; ox = x; oz = z; }
@@ -758,7 +837,7 @@ namespace Solace.Core
             return new V2(x, z);
         }
 
-        private static void AssignBiomes(WorldData w, PointOfInterest hamlet)
+        private static void AssignBiomes(WorldData w, PointOfInterest den)
         {
             int res = w.Resolution;
             float half = w.HalfSize;
@@ -771,10 +850,10 @@ namespace Solace.Core
                     float h = w.Heights[ix + iz * res];
                     float m = w.Moisture[ix + iz * res];
 
-                    float dhx = x - hamlet.X, dhz = z - hamlet.Z;
+                    float dhx = x - den.X, dhz = z - den.Z;
                     Biome b;
                     if (dhx * dhx + dhz * dhz < 32f * 32f)
-                        b = Biome.HamletGrounds;
+                        b = Biome.DenGrounds;
                     else if (h < WorldData.WaterLevel + 1.1f)
                         b = Biome.Riverbank;
                     else if (h > 46f)
@@ -782,12 +861,12 @@ namespace Solace.Core
                     else if (h > 28f)
                         b = Biome.FellCrag;
                     else if (m > 0.56f && h < 30f)
-                        b = Biome.Pinewood;
+                        b = Biome.Foxpine;
                     else
-                        b = Biome.Moorland;
+                        b = Biome.Mistmoor;
 
                     // Steep low ground reads as crag.
-                    if (b != Biome.HamletGrounds && b != Biome.Riverbank && b != Biome.SnowPeak)
+                    if (b != Biome.DenGrounds && b != Biome.Riverbank && b != Biome.SnowPeak)
                     {
                         float e = w.CellSize;
                         float sl = Math.Abs(w.SampleHeight(x + e, z) - w.SampleHeight(x - e, z)) / (2f * e)

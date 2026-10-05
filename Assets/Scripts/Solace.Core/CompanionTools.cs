@@ -128,7 +128,7 @@ namespace Solace.Core
         public override string Name { get { return "spawn_encounter"; } }
         public override string Description
         {
-            get { return "Brings a nearby animal into the scene. Args: kind=deer|rabbit|wolf; distance=10..60 (meters)."; }
+            get { return "Brings a nearby animal into the scene. Args: kind=deer|rabbit|predator (a gloom-maw); distance=10..60 (meters)."; }
         }
 
         public override string Validate(GameState s, string args, out string error)
@@ -136,8 +136,8 @@ namespace Solace.Core
             error = null;
             var d = ParseArgs(args);
             string kind = Get(d, "kind", "").ToLowerInvariant();
-            if (kind != "deer" && kind != "rabbit" && kind != "wolf")
-                return "kind must be deer, rabbit, or wolf.";
+            if (kind != "deer" && kind != "rabbit" && kind != "predator" && kind != "wolf")
+                return "kind must be deer, rabbit, or predator.";
             float dist;
             if (!float.TryParse(Get(d, "distance", ""), System.Globalization.NumberStyles.Float,
                     System.Globalization.CultureInfo.InvariantCulture, out dist))
@@ -171,13 +171,13 @@ namespace Solace.Core
                 e = new EntityState
                 {
                     Id = NextEntityId(s),
-                    Kind = kind == "wolf" ? EntityKind.Wolf : kind == "rabbit" ? EntityKind.Rabbit : EntityKind.Deer,
+                    Kind = (kind == "predator" || kind == "wolf") ? EntityKind.Predator : kind == "rabbit" ? EntityKind.Rabbit : EntityKind.Deer,
                     Name = kind,
                     X = x, Z = z,
                     Health = 100f,
-                    Behavior = kind == "wolf" ? "Roam" : "Graze",
+                    Behavior = (kind == "predator" || kind == "wolf") ? "Roam" : "Graze",
                     HomeX = x, HomeZ = z,
-                    Hunger = kind == "wolf" ? 40f : 0f
+                    Hunger = (kind == "predator" || kind == "wolf") ? 40f : 0f
                 };
                 break;
             }
@@ -185,8 +185,9 @@ namespace Solace.Core
             if (e == null) return "no dry ground in range — nothing appeared.";
             s.Entities.Add(e);
             s.ToolBudgets.SetCooldown(Name, s.ElapsedSeconds, 1800f);
+            string seen = (kind == "predator" || kind == "wolf") ? "A gloom-maw" : "A " + kind;
             s.Journal.Add(s.ElapsedSeconds,
-                "A " + kind + " stepped out of the " + BiomeWord(s.World.GetBiome(e.X, e.Z)) + ", close enough to see clearly.",
+                seen + " stepped out of the " + BiomeWord(s.World.GetBiome(e.X, e.Z)) + ", close enough to see clearly.",
                 JournalCategory.Discovery, 0.5f, 1f, null, null, "tool:spawn_encounter");
             return "a " + kind + " appeared " + dist.ToString("F0") + "m away.";
         }
@@ -195,8 +196,8 @@ namespace Solace.Core
         {
             switch (b)
             {
-                case Biome.Pinewood: return "pines";
-                case Biome.Moorland: return "heather";
+                case Biome.Foxpine: return "pines";
+                case Biome.Mistmoor: return "mist";
                 case Biome.FellCrag: return "crags";
                 default: return "wild";
             }
@@ -235,7 +236,7 @@ namespace Solace.Core
             string line;
             switch (w)
             {
-                case Weather.Clear: line = "The cloud tore open and the glen filled with light."; break;
+                case Weather.Clear: line = "The cloud tore open and the vale filled with light."; break;
                 case Weather.Cloudy: line = "Cloud piled over the fell, softening every edge."; break;
                 case Weather.Rain: line = "Rain began to fall, hissing on the heather."; break;
                 default: line = "A storm came down off the high tops, sudden and loud."; break;

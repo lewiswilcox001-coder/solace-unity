@@ -26,7 +26,11 @@ namespace Solace.Core
             return GameState.FromJson(v.AsObject());
         }
 
-        /// <summary>Marks the agent dead with a journaled cause. Used by both live and away sim.</summary>
+        /// <summary>
+        /// Marks the agent dead with a journaled cause, closes the chapter,
+        /// and hands the tale to the next generation. Death is NEVER game
+        /// over. Used by both live and away sim.
+        /// </summary>
         public static void KillAgent(GameState s, string cause)
         {
             var a = s.Agent;
@@ -35,7 +39,11 @@ namespace Solace.Core
             a.Health = 0f;
             a.HasMoveTarget = false;
             a.InCombat = false;
-            s.Journal.Add(s.ElapsedSeconds, cause, JournalCategory.System, 1.0f);
+            // SucceedOnDeath writes the chapter-close entry and opens the
+            // next chapter — the journal is a multi-generational chronicle.
+            var rng = new SeededRandom(s.Rng.Lineage);
+            LineageSystem.SucceedOnDeath(s, cause, rng);
+            s.Rng.Lineage = rng.State;
         }
 
         /// <summary>
@@ -51,7 +59,7 @@ namespace Solace.Core
             double capped = Math.Min(awaySeconds, 7.0 * 86400.0); // 7-day cap
 
             if (mode == OfflineMode.Stillness)
-                return; // nothing changes — the glen waits
+                return; // nothing changes — the vale waits
 
             var ev = new SeededRandom(s.Rng.Event);
             try
@@ -87,6 +95,14 @@ namespace Solace.Core
 
             s.Social.Decay(s.ElapsedSeconds, (float)seconds);
             RegrowBushes(s, seconds);
+            AgeQuietly(s, seconds);
+            SickenQuietly(s, seconds, ev);
+            KitsQuietly(s, seconds);
+
+            // The colossi drift even when no one watches.
+            var colRng = new SeededRandom(s.Rng.Colossus);
+            ColossusSystem.DriftQuietly(s, colRng, (float)seconds);
+            s.Rng.Colossus = colRng.State;
 
             // At most one minor episode for the whole absence.
             if (seconds > 3600.0)
@@ -94,15 +110,77 @@ namespace Solace.Core
                 string place = NearestKnownPlaceName(s);
                 string[] templates =
                 {
-                    "The days passed quietly. I kept to my rounds near " + place + ", and the glen kept me.",
+                    "The days passed quietly. I kept to my rounds near " + place + ", and the vale kept me.",
                     "A quiet stretch. I mended my pack, watched the weather turn, and thought of little.",
-                    "Nothing much happened, and that was fine. The fire stayed lit; I stayed fed."
+                    "Nothing much happened, and that was fine. The ember stayed lit; I stayed fed."
                 };
                 s.Journal.Add(s.ElapsedSeconds, templates[ev.NextInt(templates.Length)],
                     JournalCategory.Reflection, 0.35f);
             }
 
             DriftWeather(s, seconds, ev);
+        }
+
+        /// <summary>
+        /// Away aging: age advances, but a protagonist never dies of old age
+        /// while the player is gone without foreshadowing — the away sim does
+        /// not journal a dimming the player never saw coming. If Age would
+        /// pass the lifespan, it is clamped just below it (the lineage stays
+        /// fair: no unfair old-age death offline).
+        /// </summary>
+        private static void AgeQuietly(GameState s, double seconds)
+        {
+            var a = s.Agent;
+            a.Age += (float)(seconds / 86400.0 / LineageSystem.DaysPerYear);
+            if (a.Age > a.LifespanYears)
+            {
+                a.Age = a.LifespanYears - 0.05f;
+                if (!a.VigorForeshadowed)
+                {
+                    a.VigorForeshadowed = true;
+                    s.Journal.Add(s.ElapsedSeconds,
+                        "While you were away I felt my light thinning — evening coming on. I am old now.",
+                        JournalCategory.Reflection, 0.9f);
+                }
+            }
+        }
+
+        /// <summary>Away sickness: the worst of it passes slowly on its own;
+        /// the away sim never kills by sickness (severity is capped).</summary>
+        private static void SickenQuietly(GameState s, double seconds, SeededRandom ev)
+        {
+            var a = s.Agent;
+            if (a.Sickness == SicknessKind.None)
+            {
+                if (ev.NextFloat() < seconds / 86400.0 * 0.02f)
+                {
+                    a.Sickness = SicknessKind.DimCough;
+                    a.SicknessSeverity = 0.25f;
+                    s.Journal.Add(s.ElapsedSeconds,
+                        "I came down with the dim-cough while you were gone. It passed slowly.",
+                        JournalCategory.Survival, 0.5f);
+                }
+            }
+            else
+            {
+                a.SicknessSeverity = Math.Max(0f, a.SicknessSeverity - (float)seconds / 86400.0f * 0.08f);
+                if (a.SicknessSeverity <= 0f) { a.Sickness = SicknessKind.None; a.SicknessSeverity = 0f; }
+            }
+        }
+
+        /// <summary>
+        /// Away kits: hunger rises but is bounded (kindred help feed); kits
+        /// never starve to death while the player is gone. Slow growth.
+        /// </summary>
+        private static void KitsQuietly(GameState s, double seconds)
+        {
+            foreach (var k in s.Kits)
+            {
+                if (!k.IsAlive) continue;
+                k.Hunger = Math.Min(85f, k.Hunger + (float)seconds / 3600f * 3f);
+                k.Age += (float)(seconds / 86400.0 / LineageSystem.DaysPerYear);
+                k.Health = Math.Max(35f, k.Health); // the den looks after its own
+            }
         }
 
         // -- LivingWorld -------------------------------------------------------
@@ -177,13 +255,13 @@ namespace Solace.Core
                     float roll = ev.NextFloat();
                     if (roll < 0.28f && meaningfulEncounters < maxMeaningful)
                     {
-                        // Wolf encounter — the danger budget.
+                        // Gloom-maw encounter — the danger budget.
                         meaningfulEncounters++;
                         float dmg = ev.NextFloat(5f, 15f);
                         a.Health = MathX.Clamp(a.Health - dmg, 0f, 100f);
                         a.Traits.Nudge("Caution", 0.02f);
                         s.Journal.Add(s.ElapsedSeconds,
-                            "A wolf shadowed me on the fell while you were gone. I got away, but it cost me.",
+                            "A gloom-maw shadowed me on the fell while you were gone. I got away, but it cost me.",
                             JournalCategory.Combat, 0.8f);
                     }
                     else if (roll < 0.50f)
@@ -203,7 +281,7 @@ namespace Solace.Core
                     else if (roll < 0.85f)
                     {
                         s.Journal.Add(s.ElapsedSeconds,
-                            "The weather turned while I walked; I pulled my cloak close and kept going.",
+                            "The weather turned while I walked; I pulled my light in close and kept going.",
                             JournalCategory.Weather, 0.3f);
                     }
                     else
@@ -265,11 +343,11 @@ namespace Solace.Core
         {
             switch (poi.Type)
             {
-                case PoiType.BrochRuin: return "No one living built that tower";
-                case PoiType.RuinSite: return "Old stones, older stories";
-                case PoiType.Overlook: return "The whole glen lay below me";
-                case PoiType.Cairn: return "Travellers have been adding stones for years";
-                case PoiType.Campfire: return "A good sheltered spot for a fire";
+                case PoiType.InsectileRuin: return "Chitin arches, empty as sky";
+                case PoiType.RuinSite: return "Old husks of a story, older than stories";
+                case PoiType.Overlook: return "The whole vale lay below me";
+                case PoiType.Cairn: return "My kind have been adding stones for years";
+                case PoiType.EmberHollow: return "Warm glow-moss; a good resting place";
                 default: return "Worth remembering";
             }
         }
@@ -280,7 +358,7 @@ namespace Solace.Core
             int regrow = (int)(days * 1.5);
             if (regrow <= 0) return;
             foreach (var poi in s.World.Pois)
-                if (poi.Type == PoiType.BerryBush)
+                if (poi.Type == PoiType.GlowberryBush)
                     poi.Stock = Math.Min(8, poi.Stock + regrow);
         }
 
@@ -296,7 +374,7 @@ namespace Solace.Core
                 float d = V2.Distance(a.Pos, new V2(p.X, p.Z));
                 if (d < bestD) { bestD = d; best = p; }
             }
-            return best != null ? best.DisplayName : "the hamlet";
+            return best != null ? best.DisplayName : "the den";
         }
 
         /// <summary>Slow weather drift shared by quiet and living catch-up.</summary>
@@ -319,7 +397,7 @@ namespace Solace.Core
                             s.Journal.Add(s.ElapsedSeconds, "Rain came while you were gone, drumming on the heather.",
                                 JournalCategory.Weather, 0.25f);
                         else if (next == Weather.Storm)
-                            s.Journal.Add(s.ElapsedSeconds, "A storm rolled through the glen in your absence.",
+                            s.Journal.Add(s.ElapsedSeconds, "A storm rolled through the vale in your absence.",
                                 JournalCategory.Weather, 0.4f);
                     }
                 }

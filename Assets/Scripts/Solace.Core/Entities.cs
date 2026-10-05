@@ -1,6 +1,6 @@
-// Solace.Core — the other lives in the glen: deer, wolves, villagers, rabbits.
+// Solace.Core — the other lives in the vale: deer, gloom-maws, kindred, rabbits.
 // Small behavior sets, stepped by the Simulation. Wolves hunt when hungry;
-// deer and rabbits flee; villagers keep to their rounds and can be greeted.
+// deer and rabbits flee; kindred keep to their rounds and can be greeted.
 // Combat is a few readable rounds with morale — never a grind.
 using System;
 using System.Collections.Generic;
@@ -9,10 +9,10 @@ namespace Solace.Core
 {
     public enum EntityKind
     {
-        Deer,
-        Wolf,
-        Villager,
-        Rabbit
+        Deer,      // 0
+        Predator,  // 1 — the gloom-maw: hunts grazers, kits, weakened adults
+        Kindred,   // 2 — others of his kind: wander, can be greeted and bonded
+        Rabbit     // 3
     }
 
     public class EntityState
@@ -25,9 +25,11 @@ namespace Solace.Core
         public float Health = 100f;
         public string Behavior = "Idle"; // Graze, Flee, Roam, Hunt, Wander, Idle, Greeted, Hop, Dead
         public float HomeX, HomeZ;
-        public float Hunger;      // wolves: 0..100
+        public float Hunger;      // predators: 0..100
+        public SicknessKind Sickness = SicknessKind.None; // kindred only
+        public float SicknessSeverity;
         public float StateTimer;  // behavior-local clock
-        public int TargetKind;    // 0 none, 1 agent, 2 entity
+        public int TargetKind;    // 0 none, 1 agent, 2 entity, 3 kit
         public int TargetEntityId = -1;
         public float TargetX, TargetZ; // wander destination
 
@@ -46,6 +48,8 @@ namespace Solace.Core
             o.Add("behavior", Behavior);
             o.Add("homeX", HomeX); o.Add("homeZ", HomeZ);
             o.Add("hunger", Hunger);
+            o.Add("sickness", Sickness.ToString());
+            o.Add("sicknessSeverity", SicknessSeverity);
             o.Add("stateTimer", StateTimer);
             o.Add("targetKind", TargetKind);
             o.Add("targetEntityId", TargetEntityId);
@@ -57,7 +61,11 @@ namespace Solace.Core
         {
             var e = new EntityState();
             e.Id = JsonHelpers.GetInt(o, "id", 0);
-            e.Kind = (EntityKind)Enum.Parse(typeof(EntityKind), JsonHelpers.GetString(o, "kind", "Deer"));
+            string kindName = JsonHelpers.GetString(o, "kind", "Deer");
+            // Pre-reframe save compat: Villager -> Kindred, Wolf -> Predator.
+            if (kindName == "Villager") kindName = "Kindred";
+            else if (kindName == "Wolf") kindName = "Predator";
+            e.Kind = (EntityKind)Enum.Parse(typeof(EntityKind), kindName);
             e.Name = JsonHelpers.GetString(o, "name", "");
             e.X = JsonHelpers.GetFloat(o, "x", 0f); e.Z = JsonHelpers.GetFloat(o, "z", 0f);
             e.Facing = JsonHelpers.GetFloat(o, "facing", 0f);
@@ -65,6 +73,10 @@ namespace Solace.Core
             e.Behavior = JsonHelpers.GetString(o, "behavior", "Idle");
             e.HomeX = JsonHelpers.GetFloat(o, "homeX", 0f); e.HomeZ = JsonHelpers.GetFloat(o, "homeZ", 0f);
             e.Hunger = JsonHelpers.GetFloat(o, "hunger", 0f);
+            JsonValue skv;
+            e.Sickness = o.TryGet("sickness", out skv) && !skv.IsNull
+                ? (SicknessKind)Enum.Parse(typeof(SicknessKind), skv.AsString()) : SicknessKind.None;
+            e.SicknessSeverity = JsonHelpers.GetFloat(o, "sicknessSeverity", 0f);
             e.StateTimer = JsonHelpers.GetFloat(o, "stateTimer", 0f);
             e.TargetKind = JsonHelpers.GetInt(o, "targetKind", 0);
             e.TargetEntityId = JsonHelpers.GetInt(o, "targetEntityId", -1);
@@ -80,6 +92,7 @@ namespace Solace.Core
         public WorldData World;
         public AgentState Agent;
         public List<EntityState> Entities;
+        public List<KitState> Kits;
         public float Now;
         public SeededRandom Rng; // event stream
         public List<string> EventLog = new List<string>(); // journal-worthy lines for Simulation
@@ -95,8 +108,8 @@ namespace Solace.Core
             {
                 case EntityKind.Deer: StepDeer(e, ctx, dt); break;
                 case EntityKind.Rabbit: StepRabbit(e, ctx, dt); break;
-                case EntityKind.Wolf: StepWolf(e, ctx, dt); break;
-                case EntityKind.Villager: StepVillager(e, ctx, dt); break;
+                case EntityKind.Predator: StepPredator(e, ctx, dt); break;
+                case EntityKind.Kindred: StepKindred(e, ctx, dt); break;
             }
         }
 
@@ -168,7 +181,7 @@ namespace Solace.Core
             foreach (var o in ctx.Entities)
             {
                 if (o == e || !o.IsAlive) continue;
-                if (o.Kind != EntityKind.Wolf) continue;
+                if (o.Kind != EntityKind.Predator) continue;
                 float d = V2.Distance(e.Pos, o.Pos);
                 if (d < radius && d < t.Dist) { t.Found = true; t.IsAgent = false; t.Entity = o; t.Dist = d; }
             }
@@ -248,9 +261,9 @@ namespace Solace.Core
             Move(e, ctx, dx, dz, 3.2f, dt);
         }
 
-        // -- wolf -----------------------------------------------------------------
+        // -- gloom-maw (predator) -----------------------------------------------------------------
 
-        private static void StepWolf(EntityState e, EntityContext ctx, float dt)
+        private static void StepPredator(EntityState e, EntityContext ctx, float dt)
         {
             e.Hunger = MathX.Clamp(e.Hunger + dt * 0.06f, 0f, 100f);
 
@@ -302,7 +315,8 @@ namespace Solace.Core
 
         private static bool AcquirePrey(EntityState e, EntityContext ctx)
         {
-            // Prefer deer; the agent only when very hungry and close, or weak.
+            // Prefer deer; kits are easy prey; the agent only when very
+            // hungry and close, or weak.
             EntityState bestDeer = null;
             float bestD = 32f;
             foreach (var o in ctx.Entities)
@@ -316,10 +330,26 @@ namespace Solace.Core
                 e.TargetKind = 2; e.TargetEntityId = bestDeer.Id;
                 return true;
             }
+            if (ctx.Kits != null)
+            {
+                KitState bestKit = null;
+                float bestKd = 28f;
+                foreach (var k in ctx.Kits)
+                {
+                    if (!k.IsAlive) continue;
+                    float d = V2.Distance(e.Pos, k.Pos);
+                    if (d < bestKd) { bestKd = d; bestKit = k; }
+                }
+                if (bestKit != null)
+                {
+                    e.TargetKind = 3; e.TargetEntityId = bestKit.Id;
+                    return true;
+                }
+            }
             if (ctx.Agent.IsAlive && e.Hunger > 72f)
             {
                 float d = V2.Distance(e.Pos, ctx.Agent.Pos);
-                if (d < 24f && ctx.Agent.Health < 75f)
+                if (d < 24f && (ctx.Agent.Health < 75f || ctx.Agent.Glow < 0.45f))
                 {
                     e.TargetKind = 1; e.TargetEntityId = -1;
                     return true;
@@ -336,6 +366,11 @@ namespace Solace.Core
                 foreach (var o in ctx.Entities)
                     if (o.Id == e.TargetEntityId && o.IsAlive) return o.Pos;
             }
+            if (e.TargetKind == 3 && ctx.Kits != null)
+            {
+                foreach (var k in ctx.Kits)
+                    if (k.Id == e.TargetEntityId && k.IsAlive) return k.Pos;
+            }
             return new V2(e.HomeX, e.HomeZ);
         }
 
@@ -347,13 +382,33 @@ namespace Solace.Core
 
             if (e.TargetKind == 1 && ctx.Agent.IsAlive)
             {
-                // Wolf bites the agent: a couple of quick rounds.
+                // Gloom-maw bites the agent: a couple of quick rounds.
                 float dmg = ctx.Rng.NextFloat(6f, 13f);
                 ctx.Agent.Health = MathX.Clamp(ctx.Agent.Health - dmg, 0f, 100f);
                 ctx.Agent.Mood = MathX.Clamp(ctx.Agent.Mood - 8f, 0f, 100f);
                 ctx.EventLog.Add("bite:" + dmg.ToString("F0"));
                 // Being mauled teaches caution fast.
                 ctx.Agent.Traits.Nudge("Caution", 0.03f);
+                return;
+            }
+            if (e.TargetKind == 3 && ctx.Kits != null)
+            {
+                foreach (var k in ctx.Kits)
+                {
+                    if (k.Id != e.TargetEntityId || !k.IsAlive) continue;
+                    k.Health -= ctx.Rng.NextFloat(14f, 24f);
+                    if (k.Health <= 0)
+                    {
+                        k.IsAlive = false;
+                        e.Hunger = MathX.Clamp(e.Hunger - 45f, 0f, 100f);
+                        e.Behavior = "Roam";
+                        e.TargetKind = 0;
+                        float dAgent = V2.Distance(e.Pos, ctx.Agent.Pos);
+                        if (dAgent < 80f)
+                            ctx.EventLog.Add("kitkill:A gloom-maw took " + k.Name + ". I was too far. I was too far.");
+                    }
+                    break;
+                }
                 return;
             }
             if (e.TargetKind == 2)
@@ -370,24 +425,40 @@ namespace Solace.Core
                         e.TargetKind = 0;
                         float dAgent = V2.Distance(e.Pos, ctx.Agent.Pos);
                         if (dAgent < 70f)
-                            ctx.EventLog.Add("kill:I watched a wolf bring down a deer. The glen does not waste anything.");
+                            ctx.EventLog.Add("kill:I watched a gloom-maw bring down a deer. The glen does not waste anything.");
                     }
                     break;
                 }
             }
         }
 
-        // -- villager ---------------------------------------------------------------
+        // -- kindred ---------------------------------------------------------------
 
-        private static void StepVillager(EntityState e, EntityContext ctx, float dt)
+        private static void StepKindred(EntityState e, EntityContext ctx, float dt)
         {
+            // Sickness: kindred occasionally catch the dim-cough, carry it a
+            // while, and recover. Sim-light: they never die of it.
+            if (e.Sickness == SicknessKind.None)
+            {
+                if (ctx.Rng.NextFloat() < dt / 86400f * 0.04f)
+                {
+                    e.Sickness = SicknessKind.DimCough;
+                    e.SicknessSeverity = 0.3f;
+                }
+            }
+            else
+            {
+                e.SicknessSeverity -= dt * (0.06f / 3600f);
+                if (e.SicknessSeverity <= 0f) { e.Sickness = SicknessKind.None; e.SicknessSeverity = 0f; }
+            }
+
             if (e.Behavior == "Greeted")
             {
                 if (e.StateTimer <= 0f) e.Behavior = "Wander";
                 return; // stands, chatting
             }
             if (e.Behavior != "Wander" && e.Behavior != "Idle") e.Behavior = "Wander";
-            // Villagers amble near home, pausing often.
+            // Kindred amble near home, pausing often.
             if (e.StateTimer <= 0f && ctx.Rng.NextFloat() < 0.5f)
             {
                 e.Behavior = "Idle";
@@ -401,7 +472,7 @@ namespace Solace.Core
 
     /// <summary>
     /// Readable combat: a few rounds with hit chances, damage, and morale.
-    /// Used for agent-vs-wolf fights. Wolves break at low health.
+    /// Used for agent-vs-gloom-maw fights. Gloom-maws break at low health.
     /// </summary>
     public static class Combat
     {
@@ -409,12 +480,12 @@ namespace Solace.Core
         {
             public float AgentDamageDealt;
             public float AgentDamageTaken;
-            public bool WolfFlees;
-            public bool WolfDies;
+            public bool PredatorFlees;
+            public bool PredatorDies;
             public string Log;
         }
 
-        public static RoundResult ResolveRound(AgentState agent, EntityState wolf, bool agentHasSword, SeededRandom rng)
+        public static RoundResult ResolveRound(AgentState agent, EntityState predator, bool agentHasSword, SeededRandom rng)
         {
             var r = new RoundResult();
 
@@ -423,29 +494,29 @@ namespace Solace.Core
             if (rng.NextFloat() < hitChance)
             {
                 float dmg = agentHasSword ? rng.NextFloat(9f, 17f) : rng.NextFloat(4f, 9f);
-                wolf.Health = Math.Max(0f, wolf.Health - dmg);
+                predator.Health = Math.Max(0f, predator.Health - dmg);
                 r.AgentDamageDealt = dmg;
             }
             agent.Energy = MathX.Clamp(agent.Energy - 5f, 0f, 100f);
 
-            // Morale check before the wolf replies.
-            if (wolf.Health <= 0f)
+            // Morale check before the gloom-maw replies.
+            if (predator.Health <= 0f)
             {
-                r.WolfDies = true;
-                r.Log = "My blow landed true and the wolf went down.";
+                r.PredatorDies = true;
+                r.Log = "My blow landed true and the gloom-maw went down.";
                 return r;
             }
-            if (wolf.Health < 30f && rng.NextFloat() < 0.7f)
+            if (predator.Health < 30f && rng.NextFloat() < 0.7f)
             {
-                r.WolfFlees = true;
-                r.Log = "Hurt and suddenly afraid, the wolf broke and ran.";
+                r.PredatorFlees = true;
+                r.Log = "Hurt and suddenly afraid, the gloom-maw broke and ran.";
                 return r;
             }
 
-            // Wolf replies.
-            float wolfHit = 0.55f;
+            // The gloom-maw replies.
+            float predatorHit = 0.55f;
             bool blocked = agentHasSword && rng.NextFloat() < 0.3f;
-            if (!blocked && rng.NextFloat() < wolfHit)
+            if (!blocked && rng.NextFloat() < predatorHit)
             {
                 float dmg = rng.NextFloat(5f, 12f);
                 agent.Health = MathX.Clamp(agent.Health - dmg, 0f, 100f);
@@ -455,7 +526,7 @@ namespace Solace.Core
             }
             else if (blocked)
             {
-                r.Log = "I turned its lunge aside with the sword.";
+                r.Log = "I turned its lunge aside.";
             }
             else
             {
