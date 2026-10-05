@@ -1,0 +1,44 @@
+# Unity generated folders — never commit these
+Library/
+Temp/
+Obj/
+Build/
+Builds/
+Logs/
+MemoryCaptures/
+
+# Auto-generated project files
+*.csproj
+*.sln
+*.user
+*.userprefs
+
+# IDE / editor folders
+.vs/
+.idea/
+.vscode/
+*.suo
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# Crash reports
+sysinfo.txt
+
+# Unity Hub / package cache artifacts
+*.apk
+*.unitypackage

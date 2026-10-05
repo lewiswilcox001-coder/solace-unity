@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!49 &1
+PlayerSettings:
+  m_ObjectHideFlags: 0
+  serializedVersion: 9
+  productGUID: 339a1e7ed9a7492ea95d3362f7d4008b
+  productName: Solace
+  companyName: Solace
+  defaultScreenWidth: 1920
+  defaultScreenHeight: 1080
+  defaultScreenWidthWeb: 960
+  defaultScreenHeightWeb: 600
+  runInBackground: 1
+  activeInputHandler: 2
+  m_ActiveColorSpace: 1
+  m_MTRendering: 1
