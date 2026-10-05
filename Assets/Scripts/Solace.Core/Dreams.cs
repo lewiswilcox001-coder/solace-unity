@@ -358,7 +358,9 @@ namespace Solace.Core
             if (!a.IsAlive) return;
             if (sim.Brain.CurrentActionName != "Rest") return;
             if (string.IsNullOrEmpty(a.CurrentActivity) || !a.CurrentActivity.StartsWith("resting")) return;
-            if (sim.Now - a.LastDreamRolledAt < MinRestBetweenDreams) return;
+            // The -9999 sentinel means "never rolled": the first rest may always dream.
+            bool neverRolled = a.LastDreamRolledAt < -9000f;
+            if (!neverRolled && sim.Now - a.LastDreamRolledAt < MinRestBetweenDreams) return;
             a.LastDreamRolledAt = sim.Now;
             if (sim.DreamRng.NextFloat() < DreamChancePerRest)
                 GenerateDream(sim);

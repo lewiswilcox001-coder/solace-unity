@@ -35,6 +35,7 @@ public static class Tests
         TestColossi();
         TestLineageSaveRoundTrip();
         TestOfflineLineageSafety();
+        TestDreams();
         Console.WriteLine();
         Console.WriteLine("passed: " + _passed + ", failed: " + _failed);
         return _failed == 0 ? 0 : 1;
@@ -716,6 +717,148 @@ public static class Tests
         float cx = sim2.State.World.Colossi[0].X;
         SaveSystem.ApplyOfflineProgress(sim2.State, TimeSpan.FromDays(3), OfflineMode.QuietLife);
         Check(sim2.State.World.Colossi[0].X != cx, "colossi drift during away time", "unmoved");
+    }
+
+    // -- 19. Prophetic dreams ----------------------------------------------------------
+
+    private static void TestDreams()
+    {
+        Console.WriteLine("[dreams]");
+
+        // Generation: a dream is 2-4 vocabulary elements + mood, first-person text.
+        var sim = Simulation.NewLife(9801);
+        var dream = DreamSystem.GenerateDream(sim);
+        Check(dream.Elements.Count >= 2 && dream.Elements.Count <= 4,
+            "dream holds 2-4 elements (got " + dream.Elements.Count + ")", "bad recipe");
+        Check(dream.Text.StartsWith("I dreamed "),
+            "dream written in the fox's voice", "'" + dream.Text + "'");
+        Check(dream.Status == DreamStatus.Unresolved, "new dreams are unresolved", dream.Status.ToString());
+        bool journaled = false, uncertain = false;
+        foreach (var e in sim.State.Journal.Entries)
+        {
+            if (e.Category == JournalCategory.Dream && e.Text == dream.Text)
+            {
+                journaled = true;
+                if (e.Certainty < 1f) uncertain = true;
+            }
+        }
+        Check(journaled, "dream written to the journal", "missing entry");
+        Check(uncertain, "dream journaled with uncertainty", "certainty wrong");
+
+        // Determinism: same seed -> same dream, same seeding outcome.
+        var simB = Simulation.NewLife(9801);
+        var dreamB = DreamSystem.GenerateDream(simB);
+        Check(dreamB.Text == dream.Text, "same seed -> same dream text",
+            "'" + dreamB.Text + "' vs '" + dream.Text + "'");
+        Check(dreamB.SeededPlaceId == dream.SeededPlaceId, "same seed -> same seeding outcome",
+            dreamB.SeededPlaceId + " vs " + dream.SeededPlaceId);
+
+        // Seeding: a forced dream grows a genuinely new, distant, valid place.
+        var sim2 = Simulation.NewLife(9802);
+        var crafted = new DreamState
+        {
+            Id = sim2.State.Dreams.NextId++,
+            Time = 0f,
+            Elements = new List<DreamElement> { DreamElement.Ruin, DreamElement.Cairn },
+            Mood = DreamMood.Strange,
+            Text = "I dreamed arches of chitin, empty as sky, stones piled by hands I could not see, and something in it was looking back at me."
+        };
+        sim2.State.Dreams.Dreams.Add(crafted);
+        int poisBefore = sim2.State.World.Pois.Count;
+        DreamSystem.SeedDreamPlace(sim2, crafted);
+        Check(crafted.SeededPlaceId >= 0, "dream seeds a place", "nothing seeded");
+        var poi = sim2.State.World.GetPoi(crafted.SeededPlaceId);
+        Check(poi != null && sim2.State.World.Pois.Count == poisBefore + 1,
+            "seeded place is genuinely new", "not added");
+        Check(poi.DreamId == crafted.Id, "seeded place tagged with its dream", "dreamId=" + poi.DreamId);
+        Check(!poi.Discovered, "seeded place starts undiscovered", "already discovered");
+        Check(poi.Type == PoiType.RuinSite, "ruin dream grows a ruin site (got " + poi.Type + ")", "wrong type");
+        PointOfInterest den = null;
+        foreach (var p in sim2.State.World.Pois) if (p.Type == PoiType.Den) den = p;
+        float dhx = poi.X - den.X, dhz = poi.Z - den.Z;
+        Check(dhx * dhx + dhz * dhz >= 150f * 150f, "seeded place far from home", "too close");
+        float adx = poi.X - sim2.State.Agent.X, adz = poi.Z - sim2.State.Agent.Z;
+        Check(adx * adx + adz * adz >= 120f * 120f, "seeded place far from the sleeper", "too close");
+        Check(!sim2.State.World.IsWater(poi.X, poi.Z), "seeded place on dry land", "in water");
+
+        // Recognition: discovering the seeded place fulfills the dream.
+        sim2.State.Agent.X = poi.X; sim2.State.Agent.Z = poi.Z;
+        sim2.DiscoverPoi(poi.Id);
+        Check(crafted.Status == DreamStatus.Fulfilled,
+            "discovering the seeded place fulfills the dream", crafted.Status.ToString());
+        Check(crafted.ResolvedPlaceId == poi.Id,
+            "resolution points at the found place", "id=" + crafted.ResolvedPlaceId);
+        bool recognized = false;
+        foreach (var e in sim2.State.Journal.Entries)
+            if (e.Category == JournalCategory.Dream && e.Text.Contains("This is the place from my dream"))
+                recognized = true;
+        Check(recognized, "recognition journaled in the fox's voice", "missing");
+
+        // Loose matching: a natural place can rhyme with a dream too.
+        var sim3 = Simulation.NewLife(9803);
+        PointOfInterest cairn = null;
+        foreach (var p in sim3.State.World.Pois)
+            if (p.Type == PoiType.Cairn && !p.Discovered) { cairn = p; break; }
+        var rhyme = new DreamState
+        {
+            Id = sim3.State.Dreams.NextId++,
+            Time = 0f,
+            Elements = new List<DreamElement> { DreamElement.Cairn, DreamElement.Overlook },
+            Mood = DreamMood.Quiet,
+            Text = "I dreamed stones piled by hands I could not see, the whole vale laid out below me like a pelt, and I was not afraid."
+        };
+        sim3.State.Dreams.Dreams.Add(rhyme);
+        sim3.DiscoverPoi(cairn.Id);
+        Check(rhyme.Status == DreamStatus.Fulfilled,
+            "feature overlap fulfills without exact identity", rhyme.Status.ToString());
+
+        // Mystery: some dreams never come true, and stay unresolved.
+        var sim4 = Simulation.NewLife(9804);
+        var mystery = new DreamState
+        {
+            Id = sim4.State.Dreams.NextId++,
+            Time = 0f,
+            Elements = new List<DreamElement> { DreamElement.Snow, DreamElement.TreeWalker },
+            Mood = DreamMood.Vast,
+            Text = "I dreamed white silence all the way up, a tree walking, slow as weather, and I felt very small, and glad of it."
+        };
+        sim4.State.Dreams.Dreams.Add(mystery);
+        foreach (var p in new List<PointOfInterest>(sim4.State.World.Pois))
+            if (!p.Discovered) sim4.DiscoverPoi(p.Id);
+        Check(mystery.Status == DreamStatus.Unresolved,
+            "unmatched dreams stay mysteries", mystery.Status.ToString());
+
+        // Sleep gating: at most one dream roll per rest session.
+        var sim5 = Simulation.NewLife(9805);
+        var a5 = sim5.State.Agent;
+        sim5.Brain.CurrentActionName = "Rest";
+        a5.CurrentActivity = "resting in the ember-hollow";
+        a5.LastDreamRolledAt = -9999f;
+        int dreamsBefore = sim5.State.Dreams.Dreams.Count;
+        DreamSystem.TickSleep(sim5);
+        Check(a5.LastDreamRolledAt == sim5.Now, "sleep roll stamps the session", "not stamped");
+        int afterFirst = sim5.State.Dreams.Dreams.Count;
+        DreamSystem.TickSleep(sim5);
+        Check(sim5.State.Dreams.Dreams.Count == afterFirst, "no second roll in the same rest", "rolled again");
+        Check(afterFirst - dreamsBefore <= 1, "at most one dream per rest", "too many");
+        sim5.Brain.CurrentActionName = "Explore";
+        a5.LastDreamRolledAt = -9999f;
+        int beforeExplore = sim5.State.Dreams.Dreams.Count;
+        DreamSystem.TickSleep(sim5);
+        Check(sim5.State.Dreams.Dreams.Count == beforeExplore, "no dreams while awake", "dreamed awake");
+
+        // Save round-trip preserves dreams byte-identically.
+        var sim6 = Simulation.NewLife(9806);
+        DreamSystem.GenerateDream(sim6);
+        DreamSystem.GenerateDream(sim6);
+        var loaded = SaveSystem.Load(SaveSystem.Save(sim6.State));
+        Check(loaded.Dreams.Dreams.Count == sim6.State.Dreams.Dreams.Count,
+            "dreams survive save/load",
+            loaded.Dreams.Dreams.Count + " vs " + sim6.State.Dreams.Dreams.Count);
+        bool textsMatch = true;
+        for (int i = 0; i < loaded.Dreams.Dreams.Count; i++)
+            if (loaded.Dreams.Dreams[i].Text != sim6.State.Dreams.Dreams[i].Text) textsMatch = false;
+        Check(textsMatch, "dream text byte-identical after load", "diverged");
     }
 
 }
