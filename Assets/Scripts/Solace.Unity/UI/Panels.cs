@@ -113,6 +113,8 @@ namespace Solace.Unity
         private RectTransform _content;
         private ScrollRect _scroll;
         private int _builtCount = -1;
+        /// <summary>Moonlit violet for dream entries — they read differently.</summary>
+        private static readonly Color DreamViolet = new Color(0.72f, 0.62f, 0.95f);
 
         public override void Build(HudController hud)
         {
@@ -157,10 +159,11 @@ namespace Solace.Unity
             {
                 var e = entries[i];
                 bool chapter = e.Category == JournalCategory.Chapter;
-                string line = (chapter ? "[CHAPTER] " : "") +
+                bool dream = e.Category == JournalCategory.Dream;
+                string line = (chapter ? "[CHAPTER] " : dream ? "[DREAM] " : "") +
                               "[G" + e.Generation + " · " + UiKit.FormatGameTime(e.Time) + "] " + e.Text;
                 var t = UiKit.Label(_content, "E" + i, line, chapter ? 15 : 14,
-                                    chapter ? UiKit.Gold : UiKit.Ink, TextAnchor.UpperLeft);
+                                    chapter ? UiKit.Gold : dream ? DreamViolet : UiKit.Ink, TextAnchor.UpperLeft);
                 var f = t.gameObject.AddComponent<ContentSizeFitter>();
                 f.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
             }

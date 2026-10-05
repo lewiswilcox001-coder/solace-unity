@@ -38,6 +38,7 @@ eldest kit. Death is a chapter ending, never game over.
 | `Simulation.cs` | Owns `GameState`; fixed-step loop; `NewLife(seed)` factory |
 | `Lineage.cs` | `LifeStage`, `SicknessKind`, `Bond`, `Tale`, `ChapterRecord`, `LineageState`, `KitState` + `KitBrain`, `LineageSystem` (aging, sickness, tales, bonding, succession) |
 | `Colossi.cs` | `ColossusKind`, `ColossusState`, `ColossusSystem` (tree-walkers, seed-isles, night-river glow flag) |
+| `Dreams.cs` | Prophetic dreams: `DreamElement`/`DreamMood` vocabulary, first-person recipes, `DreamJournal`, `DreamSystem` (sleep rolls, world-seeding of dreamed places, recognition on discovery; some dreams stay mysteries) |
 
 ## Entry points for Unity glue
 
