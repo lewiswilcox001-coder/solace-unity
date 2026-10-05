@@ -25,7 +25,14 @@ info "UnityEditor: $UNITY_EDITOR_DLL"
 
 # --- Find a C# compiler (dotnet SDK's Roslyn preferred) ---
 CSC=""
-if command -v dotnet >/dev/null 2>&1; then
+# Compiler selection. SOLACE_CSC overrides the compiler command entirely.
+# (Set it when the default hangs: in some sandboxed environments the shared
+# VBCSCompiler server wedges and `dotnet <csc.dll>` never returns. An
+# in-process Roslyn driver lives at ~/workspace/tools/roslyncc and compiles
+# the same sources with identical flags in ~2s:
+#   SOLACE_CSC="dotnet ~/workspace/tools/roslyncc/bin/Debug/net8.0/roslyncc.dll")
+if [ -n "$SOLACE_CSC" ]; then CSC="$SOLACE_CSC"; fi
+if [ -z "$CSC" ] && command -v dotnet >/dev/null 2>&1; then
     SDK_DIR="$(dirname "$(readlink -f "$(command -v dotnet)")")/sdk"
     CSC_DLL="$(ls -d "$SDK_DIR"/*/Roslyn/bincore/csc.dll 2>/dev/null | sort -V | tail -1)"
     [ -n "$CSC_DLL" ] && CSC="dotnet $CSC_DLL"
@@ -34,12 +41,36 @@ if [ -z "$CSC" ] && command -v csc >/dev/null 2>&1; then CSC="csc"; fi
 if [ -z "$CSC" ] && command -v mcs >/dev/null 2>&1; then CSC="mcs"; fi
 [ -n "$CSC" ] || fail "no C# compiler found (need dotnet SDK, csc, or mcs)"
 
-# netstandard ref assembly for the pure-Core compile
+# netstandard ref assembly for the pure-Core compile. The dotnet SDK packs
+# may be hollow in some environments; fall back to the reference assembly
+# Unity itself ships for its scripting runtime.
 NETSTANDARD_REF=""
 if command -v dotnet >/dev/null 2>&1; then
     SDK_ROOT="$(dirname "$(readlink -f "$(command -v dotnet)")")"
     NETSTANDARD_REF="$(ls "$SDK_ROOT"/packs/NETStandard.Library.Ref/*/ref/netstandard.dll 2>/dev/null | sort -V | tail -1)"
 fi
+if [ -z "$NETSTANDARD_REF" ]; then
+    UNITY_NETSTANDARD="$EDITOR_DIR/Editor/Data/NetStandard/ref/2.1.0/netstandard.dll"
+    [ -f "$UNITY_NETSTANDARD" ] && NETSTANDARD_REF="$UNITY_NETSTANDARD"
+fi
+
+# Engine module assemblies. In Unity 6 the engine API is split across
+# UnityEngine.*Module.dll; UnityEngine.dll alone is not enough to resolve
+# everything (e.g. SerializeFieldAttribute lives in CoreModule). The real
+# editor references all modules when compiling scripts, so this check does
+# the same. (Editor-side UnityEditor.*Module.dll are intentionally NOT added:
+# UnityEditor.dll already covers the editor API and passing both creates
+# ambiguous-type errors.)
+MODULE_DLLS=""
+for _m in "$EDITOR_DIR"/Editor/Data/Managed/UnityEngine/UnityEngine.*Module.dll; do
+    [ -f "$_m" ] && MODULE_DLLS="$MODULE_DLLS -r:$_m"
+done
+
+# Framework reference. The real editor always compiles scripts against its
+# scripting-runtime reference assembly (netstandard 2.1), so every step gets
+# it — not just the pure-Core step.
+FRAMEWORK_REF=""
+[ -n "$NETSTANDARD_REF" ] && FRAMEWORK_REF="-r:$NETSTANDARD_REF"
 
 mkdir -p "$OUT_DIR"
 PASS=1
@@ -65,7 +96,7 @@ STUB_SRCS="$(find "$STUBS_DIR" -name '*.cs' 2>/dev/null)"
 if [ -n "$STUB_SRCS" ]; then
     info "WARNING: compiling against $(echo "$STUB_SRCS" | wc -l) stubbed package API file(s):"
     echo "$STUB_SRCS" | sed 's/^/  stub: /'
-    compile "stubs" "$STUB_DLL" -r:"$UNITY_ENGINE_DLL" -- $STUB_SRCS
+    compile "stubs" "$STUB_DLL" $FRAMEWORK_REF -r:"$UNITY_ENGINE_DLL" $MODULE_DLLS -- $STUB_SRCS
     STUB_REF="-r:$STUB_DLL"
 else
     info "no package stubs needed"
@@ -86,7 +117,7 @@ if [ -d "$UGUI_PKG/Runtime/UGUI" ]; then
     [ -f "$UIELEMENTS_DLL" ] && UGUI_REF="-r:$UIELEMENTS_DLL"
     # shellcheck disable=SC2086
     compile "UnityEngine.UI" "$OUT_DIR/UnityEngine.UI.dll" \
-        -r:"$UNITY_ENGINE_DLL" $UGUI_REF $STUB_REF -- $UGUI_SRCS
+        $FRAMEWORK_REF -r:"$UNITY_ENGINE_DLL" $MODULE_DLLS $UGUI_REF $STUB_REF -- $UGUI_SRCS
     [ -f "$OUT_DIR/UnityEngine.UI.dll" ] && UGUI_DLL="$OUT_DIR/UnityEngine.UI.dll"
 else
     info "WARNING: built-in com.unity.ugui package not found under $EDITOR_DIR; UGUI code cannot be validated"
@@ -110,7 +141,7 @@ UNITY_SRCS="$(find "$PROJECT_DIR/Assets/Scripts/Solace.Unity" -name '*.cs' -not 
 if [ -n "$UNITY_SRCS" ]; then
     # shellcheck disable=SC2086
     compile "Solace.Unity" "$OUT_DIR/Solace.Unity.dll" \
-        -r:"$UNITY_ENGINE_DLL" -r:"$CORE_DLL" $STUB_REF $UI_REF -- $UNITY_SRCS
+        $FRAMEWORK_REF -r:"$UNITY_ENGINE_DLL" $MODULE_DLLS -r:"$CORE_DLL" $STUB_REF $UI_REF -- $UNITY_SRCS
 else
     info "no Solace.Unity runtime sources yet (glue phase pending)"
 fi
@@ -122,7 +153,7 @@ if [ -n "$EDITOR_SRCS" ]; then
     EXTRA_REF=""; [ -f "$UNITY_DLL" ] && EXTRA_REF="-r:$UNITY_DLL"
     # shellcheck disable=SC2086
     compile "Editor" "$OUT_DIR/Solace.Editor.dll" \
-        -r:"$UNITY_ENGINE_DLL" -r:"$UNITY_EDITOR_DLL" -r:"$CORE_DLL" $EXTRA_REF $STUB_REF $UI_REF -- $EDITOR_SRCS
+        $FRAMEWORK_REF -r:"$UNITY_ENGINE_DLL" $MODULE_DLLS -r:"$UNITY_EDITOR_DLL" -r:"$CORE_DLL" $EXTRA_REF $STUB_REF $UI_REF -- $EDITOR_SRCS
 else
     info "no Editor sources yet"
 fi
