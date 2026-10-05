@@ -1,0 +1,14 @@
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/Solace.Tests.GeneratedMSBuildEditorConfig.editorconfig
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/Solace.Tests.AssemblyInfoInputs.cache
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/Solace.Tests.AssemblyInfo.cs
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/Solace.Tests.csproj.CoreCompileInputs.cache
+/home/hatch/workspace/solace-unity/tests/bin/Debug/net8.0/Solace.Tests
+/home/hatch/workspace/solace-unity/tests/bin/Debug/net8.0/Solace.Tests.deps.json
+/home/hatch/workspace/solace-unity/tests/bin/Debug/net8.0/Solace.Tests.runtimeconfig.json
+/home/hatch/workspace/solace-unity/tests/bin/Debug/net8.0/Solace.Tests.dll
+/home/hatch/workspace/solace-unity/tests/bin/Debug/net8.0/Solace.Tests.pdb
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/Solace.Tests.dll
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/refint/Solace.Tests.dll
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/Solace.Tests.pdb
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/Solace.Tests.genruntimeconfig.cache
+/home/hatch/workspace/solace-unity/tests/obj/Debug/net8.0/ref/Solace.Tests.dll
