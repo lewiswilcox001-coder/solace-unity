@@ -36,6 +36,7 @@ public static class Tests
         TestLineageSaveRoundTrip();
         TestOfflineLineageSafety();
         TestDreams();
+        TestPlaytestFixes();
         Console.WriteLine();
         Console.WriteLine("passed: " + _passed + ", failed: " + _failed);
         return _failed == 0 ? 0 : 1;
@@ -859,6 +860,97 @@ public static class Tests
         for (int i = 0; i < loaded.Dreams.Dreams.Count; i++)
             if (loaded.Dreams.Dreams[i].Text != sim6.State.Dreams.Dreams[i].Text) textsMatch = false;
         Check(textsMatch, "dream text byte-identical after load", "diverged");
+    }
+
+    // -- 20. First-playtest fixes ------------------------------------------------------
+
+    private static void TestPlaytestFixes()
+    {
+        Console.WriteLine("[playtest-fixes]");
+
+        // Bug 1: greeting spam — a greeted kindred must not be re-targeted during
+        // its 8s chat cooldown, and becomes greetable again once it expires.
+        {
+            var sim = Simulation.NewLife(4242);
+            var agent = sim.State.Agent;
+            sim.State.Entities.RemoveAll(e => e.Kind == EntityKind.Kindred);
+            var kin = new EntityState
+            {
+                Id = 9001, Kind = EntityKind.Kindred, Name = "Ember",
+                X = agent.X + 5f, Z = agent.Z, Health = 100f, Behavior = "Wander"
+            };
+            sim.State.Entities.Add(kin);
+            var ctx = new BrainContext { Sim = sim, Ai = sim.AiRng, Ev = sim.EventRng, Now = sim.Now };
+            var greet = new GreetKindredAction();
+
+            var first = greet.TargetKindred(ctx);
+            Check(first == kin, "greet targets nearby kindred", "no target found");
+
+            // Simulate what GreetKindredAction.Update does after a greeting.
+            kin.Behavior = "Greeted";
+            kin.StateTimer = 8f;
+            var second = greet.TargetKindred(ctx);
+            Check(second == null, "greeted kindred skipped during cooldown",
+                second != null ? "re-targeted " + second.Name : "null ok");
+
+            // Cooldown expired: greetable again.
+            kin.Behavior = "Wander";
+            kin.StateTimer = 0f;
+            var third = greet.TargetKindred(ctx);
+            Check(third == kin, "kindred greetable again after cooldown", "still skipped");
+        }
+
+        // Bug 2b: a starving agent with food nearby must choose Eat over Rest.
+        {
+            var sim = Simulation.NewLife(31337);
+            var agent = sim.State.Agent;
+            PointOfInterest bush = null;
+            foreach (var p in sim.State.World.Pois)
+                if (p.Type == PoiType.GlowberryBush && p.Stock > 0) { bush = p; break; }
+            Check(bush != null, "test setup: berry bush exists", "no bush placed");
+            if (bush != null)
+            {
+                agent.KnownPoiIds.Add(bush.Id);
+                agent.X = bush.X + 6f;
+                agent.Z = bush.Z;
+                agent.Hunger = 98f;   // critical, as in the playtest death
+                agent.Energy = 22f;   // low enough that Rest is a live competitor
+                agent.Thirst = 10f;
+                agent.Health = 80f;
+                agent.Influences.Clear();
+                sim.State.Entities.RemoveAll(e => e.Kind != EntityKind.Kindred);
+                foreach (var e in sim.State.Entities) { e.X += 1000f; e.Z += 1000f; }
+
+                var ctx = new BrainContext { Sim = sim, Ai = sim.AiRng, Ev = sim.EventRng, Now = sim.Now };
+                string choice = sim.Brain.Decide(ctx);
+                Check(choice == "Eat", "starving agent near food chooses Eat over Rest (got " + choice + ")",
+                    "trace: " + sim.Brain.LastDecisionTrace.Reason);
+            }
+        }
+
+        // Bug 2a: starvation health drain must give a real recovery window.
+        // 120 game-seconds of starvation from full health should cost well under
+        // half the old rate's ~30 damage.
+        {
+            var sim = Simulation.NewLife(7777);
+            var s = sim.State;
+            s.Agent.Hunger = 98f;
+            s.Agent.Thirst = 10f;
+            s.Agent.Energy = 90f;
+            s.Agent.Health = 100f;
+            s.Agent.KnownPoiIds.Clear();
+            s.Agent.Influences.Clear();
+            sim.State.Inventory.Bread = 0;
+            sim.State.Entities.RemoveAll(e => e.Kind != EntityKind.Kindred);
+
+            // Exactly 120 game-seconds of starvation (2 real seconds x60 timescale).
+            sim.Step(2f);
+
+            float lost = 100f - s.Agent.Health;
+            Check(s.Agent.IsAlive, "agent survives 2 game-minutes of starvation", "died");
+            Check(lost < 12f, "starvation drain is gradual (" + lost.ToString("F1") + " dmg / 2 min)",
+                "lost " + lost.ToString("F1"));
+        }
     }
 
 }

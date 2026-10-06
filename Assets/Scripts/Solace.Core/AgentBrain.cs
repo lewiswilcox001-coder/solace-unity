@@ -641,8 +641,10 @@ namespace Solace.Core
             a.Hunger = MathX.Clamp(a.Hunger + dt * 0.045f, 0f, 100f);
             a.Thirst = MathX.Clamp(a.Thirst + dt * 0.06f, 0f, 100f);
 
-            if (a.Hunger > 95f) a.Health -= dt * 0.25f;
-            if (a.Thirst > 95f) a.Health -= dt * 0.30f;
+            // Starvation/dehydration hurt, but slowly: a fox at full health gets
+            // ~24 game-minutes to find food or water before its strength gives out.
+            if (a.Hunger > 95f) a.Health -= dt * 0.07f;
+            if (a.Thirst > 95f) a.Health -= dt * 0.08f;
             if (a.Hunger < 55f && a.Thirst < 55f && a.Energy > 20f)
                 a.Health = Math.Min(100f, a.Health + dt * 0.12f);
 
@@ -1092,6 +1094,9 @@ namespace Solace.Core
             Add(c, "meal", bush != null ? 0.55f + 0.35f * (bush.Stock / 8f) : 0.6f, 0.25f);
             Add(c, "effort", dist / 150f, -0.15f);
             Add(c, "risk", PredatorDanger(ctx, 40f), -0.15f);
+            // Starving: food becomes urgent above all else, so Eat beats Rest/Social.
+            if (a.Hunger > 85f)
+                Add(c, "starving", MathX.Clamp01((a.Hunger - 85f) / 15f), 0.60f);
             return Total(c);
         }
 
@@ -1203,6 +1208,9 @@ namespace Solace.Core
             Add(c, "relief", 0.8f, 0.15f);
             Add(c, "effort", dist / 200f, -0.20f);
             Add(c, "risk", PredatorDanger(ctx, 40f), -0.15f);
+            // Parched: water becomes urgent above all else, so Drink beats Rest/Social.
+            if (a.Thirst > 85f)
+                Add(c, "parched", MathX.Clamp01((a.Thirst - 85f) / 15f), 0.60f);
             return Total(c);
         }
 
@@ -1573,6 +1581,7 @@ namespace Solace.Core
             foreach (var e in ctx.State.Entities)
             {
                 if (e.Kind != EntityKind.Kindred || e.Health <= 0) continue;
+                if (e.Behavior == "Greeted") continue; // 8s chat cooldown — don't re-greet
                 float d = V2.Distance(ctx.Agent.Pos, new V2(e.X, e.Z));
                 if (d < 32f && d < bestD) { bestD = d; best = e; }
             }
