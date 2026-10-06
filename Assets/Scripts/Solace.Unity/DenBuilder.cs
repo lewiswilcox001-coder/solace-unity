@@ -50,9 +50,9 @@ namespace Solace.Unity
 
         private void BuildDen(GameObject root, PointOfInterest poi)
         {
-            var earth = MaterialFactory.Lit(Earth, 0.95f);
+            var earth = MaterialFactory.Lit(Earth, 0.2f);
             var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.7f, 0.7f);
-            var dark = MaterialFactory.Lit(Dark, 1f);
+            var dark = MaterialFactory.Lit(Dark, 0.1f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
 
             // Earth dome.
@@ -77,7 +77,7 @@ namespace Solace.Unity
 
         private void BuildEmberHollow(GameObject root, PointOfInterest poi)
         {
-            var stone = MaterialFactory.Lit(Stone, 0.9f);
+            var stone = MaterialFactory.Lit(Stone, 0.35f);
             var ember = MaterialFactory.LitEmissive(new Color(0.55f, 0.20f, 0.05f),
                                                      new Color(1.0f, 0.42f, 0.10f), 0.5f);
             var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.7f, 0.7f);
@@ -156,7 +156,7 @@ namespace Solace.Unity
 
         private void BuildHive(GameObject root, PointOfInterest poi)
         {
-            var chitin = MaterialFactory.Lit(Chitin, 0.45f);
+            var chitin = MaterialFactory.Lit(Chitin, 0.35f);
             var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.5f, 0.7f);
             var rng = SeededRandom.Derive(poi.Id * 7919 + 131, "unity-hive");
 
@@ -216,7 +216,7 @@ namespace Solace.Unity
 
         private void BuildCairn(GameObject root, PointOfInterest poi)
         {
-            var stone = MaterialFactory.Lit(Stone, 0.9f);
+            var stone = MaterialFactory.Lit(Stone, 0.35f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
             var rng = SeededRandom.Derive(poi.Id * 7919 + 197, "unity-cairn");
             // Piled stones.
@@ -253,7 +253,7 @@ namespace Solace.Unity
 
         private void BuildOverlook(GameObject root, PointOfInterest poi)
         {
-            var stone = MaterialFactory.Lit(Stone, 0.9f);
+            var stone = MaterialFactory.Lit(Stone, 0.35f);
             // A simple stone seat facing the vale.
             MeshFactory.AddMesh(root, "Seat", MeshFactory.GetPrimitive(PrimitiveType.Cube), stone,
                 new Vector3(0f, 0.5f, 0f), new Vector3(2.2f, 1.0f, 1.2f), Quaternion.identity);
@@ -263,7 +263,7 @@ namespace Solace.Unity
 
         private void BuildHeroBush(GameObject root, PointOfInterest poi)
         {
-            var leaf = MaterialFactory.Lit(new Color(0.10f, 0.28f, 0.13f), 0.9f);
+            var leaf = MaterialFactory.Lit(new Color(0.10f, 0.28f, 0.13f), 0.25f);
             var berryMat = MaterialFactory.LitEmissive(new Color(0.45f, 0.08f, 0.08f),
                                                         new Color(0.9f, 0.16f, 0.10f), 0.4f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);

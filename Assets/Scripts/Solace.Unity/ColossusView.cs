@@ -50,9 +50,9 @@ namespace Solace.Unity
 
             float height = Mathf.Clamp(c.RadiusMeters * 2.2f, 150f, 300f);
             float trunkR = height * 0.045f;
-            var bark = MaterialFactory.Lit(new Color(0.16f, 0.11f, 0.08f), 0.95f);
-            var canopy = MaterialFactory.Lit(new Color(0.07f, 0.20f, 0.14f), 0.95f);
-            var mist = MaterialFactory.Lit(new Color(0.72f, 0.78f, 0.82f), 1f);
+            var bark = MaterialFactory.Lit(new Color(0.16f, 0.11f, 0.08f), 0.25f);
+            var canopy = MaterialFactory.Lit(new Color(0.07f, 0.20f, 0.14f), 0.20f);
+            var mist = MaterialFactory.Lit(new Color(0.68f, 0.74f, 0.78f), 0.4f);
 
             // Trunk: a great tapered column.
             MeshFactory.AddMesh(root.gameObject, "Trunk", MeshFactory.Cone(trunkR, height, 9), bark,
@@ -108,9 +108,9 @@ namespace Solace.Unity
             root.SetParent(transform, false);
 
             float r = Mathf.Max(10f, c.RadiusMeters * 0.5f);
-            var rock = MaterialFactory.Lit(new Color(0.32f, 0.30f, 0.33f), 0.95f);
-            var grass = MaterialFactory.Lit(new Color(0.25f, 0.42f, 0.22f), 0.9f);
-            var leaf = MaterialFactory.Lit(new Color(0.08f, 0.22f, 0.16f), 0.9f);
+            var rock = MaterialFactory.Lit(new Color(0.30f, 0.28f, 0.31f), 0.35f);
+            var grass = MaterialFactory.Lit(new Color(0.24f, 0.40f, 0.21f), 0.25f);
+            var leaf = MaterialFactory.Lit(new Color(0.08f, 0.22f, 0.16f), 0.20f);
             var glow = MaterialFactory.LitEmissive(new Color(0.12f, 0.5f, 0.45f),
                                                     new Color(0.15f, 0.7f, 0.62f), 0.5f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
@@ -131,7 +131,7 @@ namespace Solace.Unity
                     tp, Vector3.one * 1.6f, Quaternion.Euler(0f, rng.NextFloat(0f, 360f), 0f));
                 MeshFactory.AddMesh(root.gameObject, "Trunk" + i,
                     MeshFactory.GetPrimitive(PrimitiveType.Cylinder),
-                    MaterialFactory.Lit(new Color(0.25f, 0.16f, 0.10f), 0.9f),
+                    MaterialFactory.Lit(new Color(0.25f, 0.16f, 0.10f), 0.25f),
                     tp, new Vector3(0.5f, 1.2f, 0.5f), Quaternion.identity);
             }
             for (int i = 0; i < 6; i++)

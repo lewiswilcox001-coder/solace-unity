@@ -101,18 +101,18 @@ namespace Solace.Unity
             }
 
             AddVariant(MeshFactory.GetPrimitive(PrimitiveType.Cylinder),
-                       MaterialFactory.Lit(new Color(0.25f, 0.16f, 0.10f), 0.9f), trunk, world, grid);
+                       MaterialFactory.Lit(new Color(0.23f, 0.15f, 0.10f), 0.25f), trunk, world, grid);
             AddVariant(MeshFactory.PineCrown(),
-                       MaterialFactory.Lit(new Color(0.08f, 0.22f, 0.16f), 0.9f), crown, world, grid);
+                       MaterialFactory.Lit(new Color(0.10f, 0.24f, 0.17f), 0.20f), crown, world, grid);
             AddVariant(MeshFactory.GetPrimitive(PrimitiveType.Sphere),
-                       MaterialFactory.Lit(new Color(0.40f, 0.40f, 0.43f), 0.95f), rock, world, grid);
+                       MaterialFactory.Lit(new Color(0.38f, 0.38f, 0.41f), 0.35f), rock, world, grid);
             AddVariant(MeshFactory.GrassTuft(),
-                       MaterialFactory.Lit(new Color(0.32f, 0.45f, 0.22f), 0.9f), grass, world, grid);
+                       MaterialFactory.Lit(new Color(0.30f, 0.42f, 0.21f), 0.25f), grass, world, grid);
             AddVariant(MeshFactory.Disc(1.0f, 9),
                        MaterialFactory.LitEmissive(new Color(0.10f, 0.35f, 0.30f),
                                                    new Color(0.10f, 0.55f, 0.48f), 0.6f), moss, world, grid);
             AddVariant(MeshFactory.GetPrimitive(PrimitiveType.Sphere),
-                       MaterialFactory.Lit(new Color(0.10f, 0.25f, 0.12f), 0.9f), bush, world, grid);
+                       MaterialFactory.Lit(new Color(0.10f, 0.25f, 0.12f), 0.25f), bush, world, grid);
             AddVariant(MeshFactory.GetPrimitive(PrimitiveType.Sphere),
                        MaterialFactory.LitEmissive(new Color(0.45f, 0.08f, 0.08f),
                                                    new Color(0.85f, 0.15f, 0.10f), 0.4f), berry, world, grid);

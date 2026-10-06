@@ -247,7 +247,7 @@ namespace Solace.Unity
         {
             _body = new GameObject("Body");
             _body.transform.SetParent(transform, false);
-            var hide = MaterialFactory.Lit(new Color(0.055f, 0.05f, 0.07f), 0.85f);
+            var hide = MaterialFactory.Lit(new Color(0.055f, 0.05f, 0.07f), 0.3f);
             var eyeMat = MaterialFactory.LitEmissive(new Color(0.5f, 0.1f, 0.05f),
                                                       new Color(1f, 0.25f, 0.08f), 0.4f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
@@ -310,8 +310,8 @@ namespace Solace.Unity
 
         private void BuildBody()
         {
-            var coat = MaterialFactory.Lit(new Color(0.55f, 0.42f, 0.28f), 0.9f);
-            var dark = MaterialFactory.Lit(new Color(0.35f, 0.26f, 0.17f), 0.9f);
+            var coat = MaterialFactory.Lit(new Color(0.52f, 0.40f, 0.27f), 0.3f);
+            var dark = MaterialFactory.Lit(new Color(0.33f, 0.25f, 0.16f), 0.3f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
             var cyl = MeshFactory.GetPrimitive(PrimitiveType.Cylinder);
 
@@ -370,8 +370,8 @@ namespace Solace.Unity
         {
             _body = new GameObject("Body");
             _body.transform.SetParent(transform, false);
-            var fur = MaterialFactory.Lit(new Color(0.48f, 0.40f, 0.31f), 0.95f);
-            var inner = MaterialFactory.Lit(new Color(0.70f, 0.60f, 0.48f), 0.95f);
+            var fur = MaterialFactory.Lit(new Color(0.46f, 0.38f, 0.29f), 0.3f);
+            var inner = MaterialFactory.Lit(new Color(0.66f, 0.57f, 0.45f), 0.3f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
 
             Part(_body, "Torso", sphere, fur, new Vector3(0f, 0.32f, 0f),

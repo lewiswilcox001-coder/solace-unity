@@ -28,13 +28,13 @@ namespace Solace.Unity
         private ParticleSystem _rain;
         private GameObject _rainGO;
 
-        private static readonly Color SkyDay = new Color(0.60f, 0.74f, 0.86f);
-        private static readonly Color SkyDusk = new Color(0.98f, 0.55f, 0.32f);
-        private static readonly Color SkyNight = new Color(0.015f, 0.025f, 0.06f);
-        private static readonly Color FogDay = new Color(0.66f, 0.72f, 0.78f);
-        private static readonly Color FogNight = new Color(0.05f, 0.07f, 0.12f);
-        private static readonly Color AmbDay = new Color(0.55f, 0.60f, 0.66f);
-        private static readonly Color AmbNight = new Color(0.10f, 0.13f, 0.20f);
+        private static readonly Color SkyDay = new Color(0.55f, 0.70f, 0.83f);
+        private static readonly Color SkyDusk = new Color(0.96f, 0.52f, 0.30f);
+        private static readonly Color SkyNight = new Color(0.012f, 0.022f, 0.055f);
+        private static readonly Color FogDay = new Color(0.60f, 0.67f, 0.74f);
+        private static readonly Color FogNight = new Color(0.030f, 0.045f, 0.095f);
+        private static readonly Color AmbDay = new Color(0.46f, 0.51f, 0.57f);
+        private static readonly Color AmbNight = new Color(0.065f, 0.095f, 0.155f);
 
         public void Build(WorldData world)
         {
@@ -71,15 +71,15 @@ namespace Solace.Unity
             // Sun path: rises 6h, sets 18h.
             float sunT = (t - 6f) / 12f; // 0..1 across the day
             float elev = Mathf.Sin(Mathf.Clamp01(sunT) * Mathf.PI);
-            float sunI = night ? 0f : Mathf.Clamp01(elev) * 1.35f;
+            float sunI = night ? 0f : Mathf.Clamp01(elev) * 1.15f;
             _sun.intensity = sunI;
             float azim = Mathf.Lerp(-90f, 270f, Mathf.Clamp01(sunT));
             _sun.transform.rotation = Quaternion.Euler(90f - Mathf.Clamp01(elev) * 75f, azim, 0f);
             // Warm at the edges of the day.
             float warmth = 1f - Mathf.Clamp01(elev * 1.6f);
-            _sun.color = Color.Lerp(new Color(1f, 0.96f, 0.90f), new Color(1f, 0.55f, 0.30f), night ? 0f : warmth);
+            _sun.color = Color.Lerp(new Color(1f, 0.94f, 0.86f), new Color(1f, 0.52f, 0.28f), night ? 0f : warmth);
 
-            _moon.intensity = night ? 0.30f : 0f;
+            _moon.intensity = night ? 0.38f : 0f;
             _moon.transform.rotation = Quaternion.Euler(35f, 200f, 0f);
 
             // Sky / fog / ambient.
@@ -89,16 +89,17 @@ namespace Solace.Unity
             _cam.backgroundColor = sky;
             _cam.clearFlags = CameraClearFlags.SolidColor;
 
-            Color fogC = night ? FogNight : Color.Lerp(FogDay, new Color(0.85f, 0.62f, 0.52f), edge * 0.7f);
+            Color fogC = night ? FogNight : Color.Lerp(FogDay, new Color(0.82f, 0.60f, 0.50f), edge * 0.7f);
             RenderSettings.fogColor = fogC;
-            float density = night ? 0.0032f : 0.0018f;
+            // Fog is the cheapest depth cue we have — lean into it.
+            float density = night ? 0.0042f : 0.0026f;
             density += edge * 0.0012f; // dawn/dusk mist
             if (state.Weather == Weather.Rain) density += 0.0022f;
             if (state.Weather == Weather.Storm) density += 0.0045f;
             if (state.Weather == Weather.Cloudy) density += 0.0008f;
             RenderSettings.fogDensity = density;
 
-            RenderSettings.ambientLight = night ? AmbNight : Color.Lerp(AmbDay, new Color(0.55f, 0.42f, 0.36f), edge * 0.6f);
+            RenderSettings.ambientLight = night ? AmbNight : Color.Lerp(AmbDay, new Color(0.50f, 0.40f, 0.34f), edge * 0.6f);
 
             // Stars at night.
             if (night) DrawStars();

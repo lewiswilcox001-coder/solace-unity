@@ -19,18 +19,19 @@ namespace Solace.Unity
         private const int GridRes = 64; // 8m cells over the 512m vale
 
         private Material _waterMat;
-        private static readonly Color WaterDay = new Color(0.10f, 0.23f, 0.30f);
-        private static readonly Color WaterGlow = new Color(0.15f, 0.75f, 0.70f);
+        private static readonly Color WaterDay = new Color(0.11f, 0.26f, 0.32f);
+        private static readonly Color WaterGlow = new Color(0.14f, 0.72f, 0.66f);
 
-        // Biome base colors (§12: regional memory).
+        // Biome base colors (§12: regional memory). Muted, earthy — the vale
+        // should read as remembered wilderness, not a toy diorama.
         private static readonly Color[] BiomeColors = new Color[]
         {
-            new Color(0.45f, 0.52f, 0.50f), // Mistmoor: misty violet-green
-            new Color(0.10f, 0.28f, 0.24f), // Foxpine: deep blue-green
-            new Color(0.42f, 0.42f, 0.45f), // FellCrag: grey
-            new Color(0.88f, 0.90f, 0.94f), // SnowPeak: white
-            new Color(0.72f, 0.64f, 0.47f), // Riverbank: sandy
-            new Color(0.38f, 0.48f, 0.26f), // DenGrounds: warm moss
+            new Color(0.38f, 0.44f, 0.38f), // Mistmoor: muted sage
+            new Color(0.11f, 0.24f, 0.17f), // Foxpine: deep moss
+            new Color(0.36f, 0.36f, 0.38f), // FellCrag: soft grey
+            new Color(0.80f, 0.83f, 0.87f), // SnowPeak: cool white
+            new Color(0.60f, 0.52f, 0.37f), // Riverbank: earthy sand
+            new Color(0.32f, 0.39f, 0.22f), // DenGrounds: muted moss
         };
 
         public void Build(WorldData world)
@@ -84,8 +85,8 @@ namespace Solace.Unity
                 int base_ = allVerts.Count;
                 allVerts.AddRange(verts[i]);
                 for (int t = 0; t < tris[i].Count; t++) allTris.Add(base_ + tris[i][t]);
-                Color c = BiomeColors[i / 2] * (i % 2 == 0 ? 1f : 0.9f);
-                materials[i] = MaterialFactory.Lit(c, 0.9f);
+                Color c = BiomeColors[i / 2] * (i % 2 == 0 ? 1f : 0.92f);
+                materials[i] = MaterialFactory.Lit(c, 0.12f); // matte earth, never glossy
             }
             mesh.SetVertices(allVerts);
             // Per-submesh triangle ranges over the concatenated index list.
@@ -156,7 +157,7 @@ namespace Solace.Unity
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
 
-            _waterMat = MaterialFactory.NewLitEmissiveInstance(WaterDay, Color.black, 0.85f);
+            _waterMat = MaterialFactory.NewLitEmissiveInstance(WaterDay, Color.black, 0.55f);
 
             var go = new GameObject("Water");
             go.transform.SetParent(transform, false);
@@ -172,7 +173,16 @@ namespace Solace.Unity
         {
             if (_waterMat == null) return;
             bool glow = state.World.NightRiverGlow && state.IsNight;
-            MaterialFactory.SetEmission(_waterMat, glow ? WaterGlow * 0.9f : Color.black);
+            if (glow)
+            {
+                // The river breathes: a slow luminous pulse, never a flat neon.
+                float breathe = 0.72f + 0.28f * Mathf.Sin(Time.time * 0.6f);
+                MaterialFactory.SetEmission(_waterMat, WaterGlow * breathe);
+            }
+            else
+            {
+                MaterialFactory.SetEmission(_waterMat, Color.black);
+            }
         }
 
         private void Update()
