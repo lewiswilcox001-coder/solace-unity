@@ -24,7 +24,7 @@ namespace Solace.Core
         public SeededRandom DreamRng;
 
         /// <summary>Game seconds advanced per real second.</summary>
-        public float TimeScale = 60f;
+        public float TimeScale = 2f;
 
         /// <summary>Last auto-save checkpoint (transient; not part of the save).</summary>
         public string LastCheckpointJson = "";

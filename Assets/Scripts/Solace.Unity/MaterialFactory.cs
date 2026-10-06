@@ -53,6 +53,7 @@ namespace Solace.Unity
             m = new Material(_lit);
             m.color = color;
             m.SetFloat("_Smoothness", smoothness);
+            m.enableInstancing = true; // required for Graphics.DrawMeshInstanced (scatter, stars, motes)
             Cache[k] = m;
             return m;
         }
@@ -69,6 +70,7 @@ namespace Solace.Unity
             m.SetFloat("_Smoothness", smoothness);
             m.EnableKeyword("_EMISSION");
             m.SetColor(EmissionColorId, emission);
+            m.enableInstancing = true; // required for Graphics.DrawMeshInstanced (scatter, stars, motes)
             Cache[k] = m;
             return m;
         }
@@ -82,6 +84,7 @@ namespace Solace.Unity
             if (Cache.TryGetValue(k, out m)) return m;
             m = new Material(_unlit != null ? _unlit : _lit);
             m.color = color;
+            m.enableInstancing = true; // required for Graphics.DrawMeshInstanced (scatter, stars, motes)
             Cache[k] = m;
             return m;
         }
@@ -105,6 +108,7 @@ namespace Solace.Unity
             m.SetFloat("_Smoothness", smoothness);
             m.EnableKeyword("_EMISSION");
             m.SetColor(EmissionColorId, emission);
+            m.enableInstancing = true; // required for Graphics.DrawMeshInstanced (scatter, stars, motes)
             return m;
         }
     }

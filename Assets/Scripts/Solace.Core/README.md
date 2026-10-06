@@ -47,7 +47,7 @@ eldest kit. Death is a chapter ending, never game over.
 var sim = Simulation.NewLife(seed: 12345);
 
 // Per frame (call from MonoBehaviour.Update)
-sim.Step(Time.deltaTime);           // fixed 1/30s game-steps, TimeScale = 60 game-sec per real-sec
+sim.Step(Time.deltaTime);           // fixed 1/30s game-steps, TimeScale = 2 game-sec per real-sec (watchable default)
 
 // Read state for rendering / UI
 GameState s = sim.State;
