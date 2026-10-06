@@ -160,6 +160,52 @@ namespace Solace.Unity
             return merged;
         }
 
+        /// <summary>
+        /// A faceted poly-art rock: a jittered octahedron with duplicated
+        /// vertices so every face shades flat. Deliberately asymmetric —
+        /// one shared mesh, per-instance rotation/scale keeps it varied.
+        /// Origin at vertical center; roughly 1.4 wide, 1.4 tall.
+        /// </summary>
+        public static Mesh FacetedRock()
+        {
+            const string key = "facetedrock";
+            Mesh cached;
+            if (CustomCache.TryGetValue(key, out cached)) return cached;
+
+            var top = new Vector3(0.06f, 0.85f, -0.04f);
+            var bottom = new Vector3(-0.05f, -0.55f, 0.06f);
+            // Ring: hand-jittered so the silhouette is never a perfect diamond.
+            var ring = new Vector3[]
+            {
+                new Vector3(0.78f, 0.10f, 0.05f),
+                new Vector3(0.02f, -0.14f, 0.66f),
+                new Vector3(-0.85f, 0.16f, -0.08f),
+                new Vector3(-0.06f, -0.06f, -0.72f),
+            };
+            var verts = new List<Vector3>(24);
+            var tris = new List<int>(24);
+            for (int s = 0; s < 4; s++)
+            {
+                Vector3 r0 = ring[s], r1 = ring[(s + 1) % 4];
+                // Top pyramid face: (ring, apex, next) — matches Cone()'s
+                // proven outward winding.
+                int b = verts.Count;
+                verts.Add(r0); verts.Add(top); verts.Add(r1);
+                tris.Add(b); tris.Add(b + 1); tris.Add(b + 2);
+                // Bottom pyramid face: mirrored winding for -Y outward.
+                b = verts.Count;
+                verts.Add(r0); verts.Add(r1); verts.Add(bottom);
+                tris.Add(b); tris.Add(b + 1); tris.Add(b + 2);
+            }
+            var mesh = new Mesh();
+            mesh.SetVertices(verts);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateNormals();
+            mesh.RecalculateBounds();
+            CustomCache[key] = mesh;
+            return mesh;
+        }
+
         /// <summary>A thin vertical streak (rain), unit-ish height.</summary>
         public static Mesh Streak()
         {

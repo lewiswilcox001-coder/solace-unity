@@ -81,7 +81,7 @@ namespace Solace.Unity
             var ember = MaterialFactory.LitEmissive(new Color(0.55f, 0.20f, 0.05f),
                                                      new Color(1.0f, 0.42f, 0.10f), 0.5f);
             var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.7f, 0.7f);
-            var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
+            var rockMesh = MeshFactory.FacetedRock();
             var rng = SeededRandom.Derive(poi.Id * 7919 + 71, "unity-ember");
 
             // Ring of stones.
@@ -90,8 +90,8 @@ namespace Solace.Unity
             {
                 float a = (i / (float)n) * Mathf.PI * 2f;
                 float r = 2.6f;
-                MeshFactory.AddMesh(root, "Stone" + i, sphere, stone,
-                    new Vector3(Mathf.Cos(a) * r, 0.25f, Mathf.Sin(a) * r),
+                MeshFactory.AddMesh(root, "Stone" + i, rockMesh, stone,
+                    new Vector3(Mathf.Cos(a) * r, 0.35f, Mathf.Sin(a) * r),
                     new Vector3(rng.NextFloat(0.7f, 1.1f), rng.NextFloat(0.5f, 0.8f), rng.NextFloat(0.7f, 1.1f)),
                     Quaternion.Euler(0f, rng.NextFloat(0f, 360f), 0f));
             }
@@ -217,14 +217,14 @@ namespace Solace.Unity
         private void BuildCairn(GameObject root, PointOfInterest poi)
         {
             var stone = MaterialFactory.Lit(Stone, 0.35f);
-            var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
+            var rockMesh = MeshFactory.FacetedRock();
             var rng = SeededRandom.Derive(poi.Id * 7919 + 197, "unity-cairn");
             // Piled stones.
             float y = 0f;
             for (int i = 0; i < 6; i++)
             {
                 float s = 1.3f - i * 0.16f;
-                MeshFactory.AddMesh(root, "Pile" + i, sphere, stone,
+                MeshFactory.AddMesh(root, "Pile" + i, rockMesh, stone,
                     new Vector3((rng.NextFloat() - 0.5f) * 0.3f, y + s * 0.45f, (rng.NextFloat() - 0.5f) * 0.3f),
                     new Vector3(s, s * 0.7f, s), Quaternion.Euler(0f, rng.NextFloat(0f, 360f), 0f));
                 y += s * 0.55f;

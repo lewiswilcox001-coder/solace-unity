@@ -76,9 +76,9 @@ namespace Solace.Unity.Character
         void BuildRig(float s)
         {
             Shader lit = LitShader();
-            _russet     = Mat(lit, new Color(0.60f, 0.29f, 0.12f));                       // deep russet-amber
-            _russetDark = Mat(lit, new Color(0.38f, 0.18f, 0.08f));                       // muzzle / shading
-            _cream      = Mat(lit, new Color(0.92f, 0.85f, 0.72f));                       // chest, cheeks
+            _russet     = Mat(lit, new Color(0.63f, 0.30f, 0.12f));                       // deep russet-amber
+            _russetDark = Mat(lit, new Color(0.40f, 0.19f, 0.08f));                       // muzzle / shading
+            _cream      = Mat(lit, new Color(0.93f, 0.86f, 0.73f));                       // chest, cheeks
             _dark       = Mat(lit, new Color(0.15f, 0.10f, 0.08f));                       // socks, nose
             _eye        = Mat(lit, new Color(0.10f, 0.05f, 0.02f), new Color(1f, 0.55f, 0.15f), 0.7f);
             _tailTip    = Mat(lit, new Color(0.95f, 0.88f, 0.76f), new Color(1f, 0.70f, 0.40f), 0.25f);

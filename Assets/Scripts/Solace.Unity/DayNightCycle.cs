@@ -15,6 +15,7 @@ namespace Solace.Unity
     {
         private Light _sun;
         private Light _moon;
+        private Light _fill; // cool fill from the opposite azimuth: models the facets
         private Camera _cam;
 
         // Stars: one instanced draw, dome follows the camera.
@@ -54,6 +55,15 @@ namespace Solace.Unity
             _moon.color = new Color(0.55f, 0.65f, 0.90f);
             _moon.shadows = LightShadows.None;
 
+            // Cool fill: no shadows, low intensity — its only job is to keep
+            // shadow-side facets readable and give the poly-art depth.
+            var fillGO = new GameObject("Fill");
+            fillGO.transform.SetParent(transform, false);
+            _fill = fillGO.AddComponent<Light>();
+            _fill.type = LightType.Directional;
+            _fill.color = new Color(0.50f, 0.60f, 0.78f);
+            _fill.shadows = LightShadows.None;
+
             RenderSettings.ambientMode = AmbientMode.Flat;
             RenderSettings.fog = true;
             RenderSettings.fogMode = FogMode.ExponentialSquared;
@@ -75,16 +85,21 @@ namespace Solace.Unity
             _sun.intensity = sunI;
             float azim = Mathf.Lerp(-90f, 270f, Mathf.Clamp01(sunT));
             _sun.transform.rotation = Quaternion.Euler(90f - Mathf.Clamp01(elev) * 75f, azim, 0f);
-            // Warm at the edges of the day.
-            float warmth = 1f - Mathf.Clamp01(elev * 1.6f);
-            _sun.color = Color.Lerp(new Color(1f, 0.94f, 0.86f), new Color(1f, 0.52f, 0.28f), night ? 0f : warmth);
+            // Warm at the edges of the day — golden hour lingers (elev*1.15
+            // keeps warmth alive well past sunrise/sunset).
+            float warmth = 1f - Mathf.Clamp01(elev * 1.15f);
+            _sun.color = Color.Lerp(new Color(1f, 0.94f, 0.86f), new Color(1f, 0.50f, 0.26f), night ? 0f : warmth);
 
             _moon.intensity = night ? 0.38f : 0f;
             _moon.transform.rotation = Quaternion.Euler(35f, 200f, 0f);
 
+            // Fill opposes the sun so facets get a cool rim from behind.
+            _fill.intensity = night ? 0.05f : 0.22f;
+            _fill.transform.rotation = Quaternion.Euler(40f, azim + 180f, 0f);
+
             // Sky / fog / ambient.
-            // Dusk factor: peaks near sunrise/sunset.
-            float edge = night ? 0f : Mathf.Clamp01(1f - elev * 2.2f);
+            // Dusk factor: peaks near sunrise/sunset, lingers with golden hour.
+            float edge = night ? 0f : Mathf.Clamp01(1f - elev * 1.8f);
             Color sky = night ? SkyNight : Color.Lerp(SkyDay, SkyDusk, edge * 0.85f);
             _cam.backgroundColor = sky;
             _cam.clearFlags = CameraClearFlags.SolidColor;
