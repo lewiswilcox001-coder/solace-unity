@@ -130,24 +130,26 @@ namespace Solace.Unity
             var go = new GameObject("Embers");
             go.transform.SetParent(root.transform, false);
             go.transform.localPosition = new Vector3(0f, 0.4f, 0f);
-            var motes = go.AddComponent<MoteField>();
-            // Deterministic per-hollow seed from the POI root name ("POI_EmberHollow_<id>").
-            var rng = SeededRandom.Derive((int)SeededRandom.StableHash(root.name), "unity-motes-embers");
-            motes.Setup(new MoteConfig
-            {
-                Mesh = MeshFactory.GetPrimitive(PrimitiveType.Sphere),
-                Material = MaterialFactory.LitEmissive(new Color(0.6f, 0.2f, 0.05f),
-                                                       new Color(1f, 0.45f, 0.1f), 0.4f),
-                Count = 60,
-                Behavior = MoteBehavior.Rise,
-                Spherical = true,
-                Volume = new Vector3(1.6f, 0f, 0f),
-                MinScale = 0.05f,
-                MaxScale = 0.14f,
-                MinSpeed = 0.6f,
-                MaxSpeed = 1.6f,
-                VerticalRange = 3f,
-            }, rng);
+            var ps = go.AddComponent<ParticleSystem>();
+            var main = ps.main;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(1.2f, 2.6f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.6f, 1.6f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.14f);
+            main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 0.55f, 0.15f));
+            main.gravityModifier = -0.15f;
+            main.maxParticles = 60;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            var em = ps.emission;
+            em.rateOverTime = new ParticleSystem.MinMaxCurve(14f);
+            var sh = ps.shape;
+            sh.shapeType = ParticleSystemShapeType.Sphere;
+            sh.radius = 1.6f;
+            var psr = go.GetComponent<ParticleSystemRenderer>();
+            psr.renderMode = ParticleSystemRenderMode.Mesh;
+            psr.mesh = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
+            psr.material = MaterialFactory.LitEmissive(new Color(0.6f, 0.2f, 0.05f),
+                                                       new Color(1f, 0.45f, 0.1f), 0.4f);
         }
 
         // -- the hollow hive (insectile ruin) ---------------------------------------

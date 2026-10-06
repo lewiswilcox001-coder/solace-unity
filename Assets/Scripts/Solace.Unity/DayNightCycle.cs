@@ -2,9 +2,9 @@
 //
 // Sun + moon directionals, flat ambient, exponential fog, and an animated
 // sky color on the camera (no skybox asset needed). Stars are one instanced
-// draw of tiny emissive spheres; fireflies, rain and embers are instanced
-// mote fields (opaque — no transparency anywhere). Mote intensity is driven
-// by IsNight / Weather.
+// draw of tiny emissive spheres; fireflies and rain are mesh-particle
+// systems (opaque — no transparency anywhere). All particle emission rates
+// are driven by IsNight / Weather.
 using UnityEngine;
 using UnityEngine.Rendering;
 using Solace.Core;
@@ -24,8 +24,8 @@ namespace Solace.Unity
         private Vector3 _starAnchor;
         private const int StarCount = 220;
 
-        private MoteField _fireflies;
-        private MoteField _rain;
+        private ParticleSystem _fireflies;
+        private ParticleSystem _rain;
         private GameObject _rainGO;
 
         private static readonly Color SkyDay = new Color(0.60f, 0.74f, 0.86f);
@@ -60,7 +60,7 @@ namespace Solace.Unity
 
             BuildStars(world);
             BuildFireflies(world);
-            BuildRain(world);
+            BuildRain();
         }
 
         public void SyncFromState(GameState state)
@@ -102,12 +102,10 @@ namespace Solace.Unity
 
             // Stars at night.
             if (night) DrawStars();
-            // Fireflies at night; rain by weather.
-            _fireflies.SetIntensity(night ? 1f : 0f);
-            float rainIntensity = state.Weather == Weather.Storm ? 1f
-                : state.Weather == Weather.Rain ? 0.42f : 0f;
-            _rain.SetIntensity(rainIntensity);
-            if (rainIntensity > 0f && _cam != null)
+            SetEmission(_fireflies, night ? 26f : 0f);
+            float rainRate = state.Weather == Weather.Storm ? 900f : state.Weather == Weather.Rain ? 380f : 0f;
+            SetEmission(_rain, rainRate);
+            if (rainRate > 0f && _cam != null)
             {
                 Vector3 cp = _cam.transform.position;
                 _rainGO.transform.position = new Vector3(cp.x, cp.y + 12f, cp.z);
@@ -153,7 +151,7 @@ namespace Solace.Unity
                 null, ShadowCastingMode.Off, false);
         }
 
-        // -- motes ----------------------------------------------------------------
+        // -- particles ------------------------------------------------------------
 
         private void BuildFireflies(WorldData world)
         {
@@ -165,46 +163,61 @@ namespace Solace.Unity
             float dx = den != null ? den.X : 0f, dz = den != null ? den.Z : 0f;
             go.transform.position = new Vector3(dx, world.SampleHeight(dx, dz) + 1.5f, dz);
 
-            var motes = go.AddComponent<MoteField>();
-            motes.Setup(new MoteConfig
-            {
-                Mesh = MeshFactory.GetPrimitive(PrimitiveType.Sphere),
-                Material = MaterialFactory.LitEmissive(new Color(0.7f, 0.55f, 0.2f),
-                                                       new Color(1f, 0.8f, 0.35f), 0.4f),
-                Count = 120,
-                Behavior = MoteBehavior.Drift,
-                Spherical = true,
-                Volume = new Vector3(14f, 0f, 0f),
-                MinScale = 0.05f,
-                MaxScale = 0.12f,
-                MinSpeed = 0.4f,
-                MaxSpeed = 1.4f,
-                VerticalRange = 1.5f, // wander amplitude
-            }, SeededRandom.Derive(world.Seed, "unity-motes-fireflies"));
-            _fireflies = motes;
+            _fireflies = go.AddComponent<ParticleSystem>();
+            var main = _fireflies.main;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(2.5f, 5f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.4f, 1.4f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.05f, 0.12f);
+            main.startColor = new ParticleSystem.MinMaxGradient(new Color(1f, 0.85f, 0.45f));
+            main.gravityModifier = 0f;
+            main.maxParticles = 120;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            var em = _fireflies.emission;
+            em.rateOverTime = new ParticleSystem.MinMaxCurve(0f);
+            var sh = _fireflies.shape;
+            sh.shapeType = ParticleSystemShapeType.Sphere;
+            sh.radius = 14f;
+            var psr = go.GetComponent<ParticleSystemRenderer>();
+            psr.renderMode = ParticleSystemRenderMode.Mesh;
+            psr.mesh = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
+            psr.material = MaterialFactory.LitEmissive(new Color(0.7f, 0.55f, 0.2f),
+                                                       new Color(1f, 0.8f, 0.35f), 0.4f);
         }
 
-        private void BuildRain(WorldData world)
+        private void BuildRain()
         {
             _rainGO = new GameObject("Rain");
             _rainGO.transform.SetParent(transform, false);
-            var motes = _rainGO.AddComponent<MoteField>();
-            motes.Setup(new MoteConfig
-            {
-                // Thin vertical streaks (opaque): read as rain at speed.
-                Mesh = MeshFactory.Streak(),
-                Material = MaterialFactory.Lit(new Color(0.60f, 0.70f, 0.80f), 0.4f),
-                Count = 1200,
-                Behavior = MoteBehavior.Fall,
-                Spherical = false,
-                Volume = new Vector3(40f, 0f, 40f),
-                MinScale = 0.8f,
-                MaxScale = 1.2f,
-                MinSpeed = 22f,
-                MaxSpeed = 30f,
-                VerticalRange = 30f, // fall distance; volume re-centers above the camera
-            }, SeededRandom.Derive(world.Seed, "unity-motes-rain"));
-            _rain = motes;
+            _rain = _rainGO.AddComponent<ParticleSystem>();
+            var main = _rain.main;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(0.9f, 1.3f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(22f, 30f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.8f, 1.2f);
+            main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.65f, 0.75f, 0.85f));
+            main.gravityModifier = 0f;
+            main.maxParticles = 1200;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            var em = _rain.emission;
+            em.rateOverTime = new ParticleSystem.MinMaxCurve(0f);
+            var sh = _rain.shape;
+            sh.shapeType = ParticleSystemShapeType.Box;
+            sh.scale = new Vector3(40f, 1f, 40f);
+            var psr = _rainGO.GetComponent<ParticleSystemRenderer>();
+            psr.renderMode = ParticleSystemRenderMode.Mesh;
+            // Thin vertical streaks (opaque): read as rain at speed.
+            psr.mesh = MeshFactory.Streak();
+            psr.material = MaterialFactory.Lit(new Color(0.60f, 0.70f, 0.80f), 0.4f);
+        }
+
+        private static void SetEmission(ParticleSystem ps, float rate)
+        {
+            if (ps == null) return;
+            var em = ps.emission;
+            var curve = em.rateOverTime;
+            if (Mathf.Abs(curve.constant - rate) < 0.01f) return;
+            em.rateOverTime = new ParticleSystem.MinMaxCurve(rate);
         }
 
         private void Update()
