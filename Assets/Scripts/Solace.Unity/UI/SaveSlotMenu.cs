@@ -78,8 +78,13 @@ namespace Solace.Unity.UI
             frame.effectColor = new Color(UiKit.Gold.r, UiKit.Gold.g, UiKit.Gold.b, 0.35f);
             frame.effectDistance = new Vector2(1f, 1f);
 
-            // Whole card is the button.
+            // Whole card is the button. NOTE: UiKit.Panel sets raycastTarget=false,
+            // which would make the Button deaf to clicks — re-enable it here so
+            // the card actually receives pointer events.
+            var cardImg = card.GetComponent<Image>();
+            if (cardImg != null) cardImg.raycastTarget = true;
             var btn = card.gameObject.AddComponent<Button>();
+            if (cardImg != null) btn.targetGraphic = cardImg;
             var colors = btn.colors;
             colors.highlightedColor = new Color(1f, 1f, 1f, 0.12f);
             colors.pressedColor = new Color(1f, 1f, 1f, 0.2f);
@@ -158,22 +163,31 @@ namespace Solace.Unity.UI
 
         private static void Choose(GameBootstrap boot, SaveSlots.SlotInfo info, RectTransform card)
         {
-            bool ok;
-            if (info.Exists)
+            try
             {
-                ok = boot.LoadSlot(info.Slot);
-                if (!ok && boot.Hud != null)
-                    boot.Hud.ShowToast("That save couldn't be read. It was left untouched.", 6f);
+                bool ok;
+                if (info.Exists)
+                {
+                    ok = boot.LoadSlot(info.Slot);
+                    if (!ok && boot.Hud != null)
+                        boot.Hud.ShowToast("That save couldn't be read. It was left untouched.", 6f);
+                }
+                else
+                {
+                    boot.NewLifeInSlot(info.Slot, ChallengeMode.Standard);
+                    ok = true;
+                }
+                if (ok)
+                {
+                    var canvas = card.GetComponentInParent<Canvas>();
+                    if (canvas != null) UnityEngine.Object.Destroy(canvas.gameObject);
+                }
             }
-            else
+            catch (System.Exception ex)
             {
-                boot.NewLifeInSlot(info.Slot, ChallengeMode.Standard);
-                ok = true;
-            }
-            if (ok)
-            {
-                var canvas = card.GetComponentInParent<Canvas>();
-                if (canvas != null) UnityEngine.Object.Destroy(canvas.gameObject);
+                Debug.LogException(ex);
+                if (boot != null && boot.Hud != null)
+                    boot.Hud.ShowToast("Couldn't start that vale — see the console.", 6f);
             }
         }
 
@@ -203,15 +217,30 @@ namespace Solace.Unity.UI
             frame.effectDistance = new Vector2(2f, 2f);
 
             var btn = card.gameObject.AddComponent<Button>();
+            var dCardImg = card.GetComponent<Image>();
+            if (dCardImg != null)
+            {
+                dCardImg.raycastTarget = true; // Panel() disables it; the card must be clickable.
+                btn.targetGraphic = dCardImg;
+            }
             var colors = btn.colors;
             colors.highlightedColor = new Color(1f, 1f, 1f, 0.12f);
             colors.pressedColor = new Color(1f, 1f, 1f, 0.2f);
             btn.colors = colors;
             btn.onClick.AddListener(() =>
             {
-                boot.LoadDailyWorld();
-                var canvas = card.GetComponentInParent<Canvas>();
-                if (canvas != null) UnityEngine.Object.Destroy(canvas.gameObject);
+                try
+                {
+                    boot.LoadDailyWorld();
+                    var canvas = card.GetComponentInParent<Canvas>();
+                    if (canvas != null) UnityEngine.Object.Destroy(canvas.gameObject);
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogException(ex);
+                    if (boot.Hud != null)
+                        boot.Hud.ShowToast("Couldn't start today's vale — see the console.", 6f);
+                }
             });
 
             // Deterministic thumbnail from the daily seed.
