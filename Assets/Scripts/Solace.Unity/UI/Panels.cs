@@ -379,11 +379,14 @@ namespace Solace.Unity
 
             // Agent arrow (white, rotated by facing).
             AgentState a = sim.State.Agent;
-            int ax = ToMap(a.X, half), az = ToMap(a.Z, half);
-            var arrow = new Color32(255, 255, 255, 255);
-            float fx = Mathf.Sin(a.Facing), fz = Mathf.Cos(a.Facing);
-            Plot(px, ax, az, arrow, 1);
-            Plot(px, ax + (int)(fx * 3f), az + (int)(fz * 3f), arrow, 1);
+            if (a != null)
+            {
+                int ax = ToMap(a.X, half), az = ToMap(a.Z, half);
+                var arrow = new Color32(255, 255, 255, 255);
+                float fx = Mathf.Sin(a.Facing), fz = Mathf.Cos(a.Facing);
+                Plot(px, ax, az, arrow, 1);
+                Plot(px, ax + (int)(fx * 3f), az + (int)(fz * 3f), arrow, 1);
+            }
 
             _tex.SetPixels32(px);
             _tex.Apply();

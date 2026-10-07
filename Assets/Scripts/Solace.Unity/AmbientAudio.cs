@@ -363,7 +363,7 @@ namespace Solace.Unity
                 // Slow breathing: two incommensurate LFOs.
                 float lfo = 0.65f + 0.25f * Mathf.Sin(t * 0.45f)
                                  + 0.10f * Mathf.Sin(t * 1.13f + 1.7f);
-                s[i] = lp * lfo * 2.2f;
+                s[i] = lp * lfo * 0.5f; // keep in [-1,1] to avoid clipping static
             }
             return LoopFade(s, rate);
         }
@@ -382,7 +382,7 @@ namespace Solace.Unity
                 float t = (float)i / rate;
                 // Burble: amplitude wobble at babbling-brook rates.
                 float burble = 0.70f + 0.30f * Mathf.Sin(t * 23f + Mathf.Sin(t * 5.1f) * 2f);
-                s[i] = band * burble * 2.6f;
+                s[i] = band * burble * 0.6f; // was 2.6f, caused clipping static
             }
             return LoopFade(s, rate);
         }
@@ -556,7 +556,7 @@ namespace Solace.Unity
                 // Rolling envelope: quick-ish attack, ragged decay.
                 float env = Mathf.Min(1f, t / 0.18f) * Mathf.Exp(-u * 3.2f)
                           * (0.7f + 0.3f * Mathf.Sin(t * 9f + variant));
-                s[i] = (brown * 3.2f + Mathf.Sin(sub) * 0.35f) * env;
+                s[i] = (brown * 0.8f + Mathf.Sin(sub) * 0.35f) * env; // was brown*3.2f, caused clipping
             }
             return s;
         }
