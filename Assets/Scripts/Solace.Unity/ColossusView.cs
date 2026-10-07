@@ -406,20 +406,20 @@ namespace Solace.Unity
             if (_birdMats.Count > 0 && _birdMesh != null)
             {
                 _birdMats.CopyTo(_birdArr);
-                Graphics.DrawMeshInstanced(_birdMesh, 0, _birdMat, _birdArr,
-                    _birdMats.Count, null, ShadowCastingMode.Off, false);
+                MaterialFactory.DrawInstanced(_birdMesh, _birdMat, _birdArr,
+                    _birdMats.Count, ShadowCastingMode.Off, false);
             }
             if (_podMats.Count > 0 && _podMesh != null)
             {
                 _podMats.CopyTo(_podArr);
-                Graphics.DrawMeshInstanced(_podMesh, 0, _podMat, _podArr,
-                    _podMats.Count, null, ShadowCastingMode.Off, false);
+                MaterialFactory.DrawInstanced(_podMesh, _podMat, _podArr,
+                    _podMats.Count, ShadowCastingMode.Off, false);
             }
             if (_leafMats.Count > 0 && _leafMesh != null)
             {
                 _leafMats.CopyTo(_leafArr);
-                Graphics.DrawMeshInstanced(_leafMesh, 0, _leafMat, _leafArr,
-                    _leafMats.Count, null, ShadowCastingMode.Off, false);
+                MaterialFactory.DrawInstanced(_leafMesh, _leafMat, _leafArr,
+                    _leafMats.Count, ShadowCastingMode.Off, false);
             }
         }
 

@@ -183,8 +183,8 @@ namespace Solace.Unity
                     for (int b = 0; b < batches.Length; b++)
                     {
                         Matrix4x4[] mats = batches[b];
-                        Graphics.DrawMeshInstanced(vd.Mesh, 0, vd.Material, mats, mats.Length,
-                            null, ShadowCastingMode.Off, false);
+                        MaterialFactory.DrawInstanced(vd.Mesh, vd.Material, mats,
+                            ShadowCastingMode.Off, false);
                     }
                 }
             }

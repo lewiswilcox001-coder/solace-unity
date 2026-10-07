@@ -587,8 +587,8 @@ namespace Solace.Unity
             for (int v = 0; v < 3; v++)
             {
                 if (_cloudCounts[v] == 0) continue;
-                Graphics.DrawMeshInstanced(_cloudMeshes[v], 0, _cloudMat, _cloudMats[v], _cloudCounts[v],
-                    null, ShadowCastingMode.Off, false);
+                MaterialFactory.DrawInstanced(_cloudMeshes[v], _cloudMat, _cloudMats[v], _cloudCounts[v],
+                    ShadowCastingMode.Off, false);
             }
 
             // Cloud mood lighting: single animated sun/moon in the lambert shader.

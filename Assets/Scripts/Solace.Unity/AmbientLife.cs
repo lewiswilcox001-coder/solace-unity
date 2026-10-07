@@ -628,29 +628,29 @@ namespace Solace.Unity
 
         private void DrawAll()
         {
-            Graphics.DrawMeshInstanced(_birdBodyMesh, 0, _birdMat,
-                _birdBodyMats, BirdTotal, null, ShadowCastingMode.Off, false);
-            Graphics.DrawMeshInstanced(_birdWingRMesh, 0, _birdMat,
-                _birdWingRMats, BirdTotal, null, ShadowCastingMode.Off, false);
-            Graphics.DrawMeshInstanced(_birdWingLMesh, 0, _birdMat,
-                _birdWingLMats, BirdTotal, null, ShadowCastingMode.Off, false);
+            MaterialFactory.DrawInstanced(_birdBodyMesh, _birdMat,
+                _birdBodyMats, BirdTotal, ShadowCastingMode.Off, false);
+            MaterialFactory.DrawInstanced(_birdWingRMesh, _birdMat,
+                _birdWingRMats, BirdTotal, ShadowCastingMode.Off, false);
+            MaterialFactory.DrawInstanced(_birdWingLMesh, _birdMat,
+                _birdWingLMats, BirdTotal, ShadowCastingMode.Off, false);
 
             if (_butterflies.Count > 0)
-                Graphics.DrawMeshInstanced(_bflyBodyMesh, 0, _bflyBodyMat,
-                    _bflyBodyMats, _butterflies.Count, null, ShadowCastingMode.Off, false);
+                MaterialFactory.DrawInstanced(_bflyBodyMesh, _bflyBodyMat,
+                    _bflyBodyMats, _butterflies.Count, ShadowCastingMode.Off, false);
             for (int c = 0; c < ButterflyColors; c++)
             {
                 int k = _bflyWingCounts[c];
                 if (k == 0) continue;
-                Graphics.DrawMeshInstanced(_bflyWingRMesh, 0, _bflyWingMats[c],
-                    _bflyWingRMats[c], k, null, ShadowCastingMode.Off, false);
-                Graphics.DrawMeshInstanced(_bflyWingLMesh, 0, _bflyWingMats[c],
-                    _bflyWingLMats[c], k, null, ShadowCastingMode.Off, false);
+                MaterialFactory.DrawInstanced(_bflyWingRMesh, _bflyWingMats[c],
+                    _bflyWingRMats[c], k, ShadowCastingMode.Off, false);
+                MaterialFactory.DrawInstanced(_bflyWingLMesh, _bflyWingMats[c],
+                    _bflyWingLMats[c], k, ShadowCastingMode.Off, false);
             }
 
             if (_fishActive)
-                Graphics.DrawMeshInstanced(_fishMesh, 0, _fishMat,
-                    _fishMats, _fish.Count, null, ShadowCastingMode.Off, false);
+                MaterialFactory.DrawInstanced(_fishMesh, _fishMat,
+                    _fishMats, _fish.Count, ShadowCastingMode.Off, false);
         }
 
         // -- mesh builders ------------------------------------------------------

@@ -111,5 +111,33 @@ namespace Solace.Unity
             m.enableInstancing = true; // required for Graphics.DrawMeshInstanced (scatter, stars, motes)
             return m;
         }
+
+        /// <summary>
+        /// Bulletproof instanced draw. Forces enableInstancing=true immediately before the
+        /// draw call, guarding against any code path that might clear the flag or pass a
+        /// material that bypassed the factory. If instancing is unavailable, falls back to
+        /// individual DrawMesh calls so the game keeps running.
+        /// </summary>
+        public static void DrawInstanced(Mesh mesh, Material mat, Matrix4x4[] mats, int count = -1,
+            UnityEngine.Rendering.ShadowCastingMode shadows = UnityEngine.Rendering.ShadowCastingMode.Off,
+            bool receiveShadows = false)
+        {
+            if (mesh == null || mat == null || mats == null || mats.Length == 0) return;
+            int n = count < 0 ? mats.Length : System.Math.Min(count, mats.Length);
+            if (n <= 0) return;
+            // Force the flag every time — belt and suspenders against stale/cleared state.
+            mat.enableInstancing = true;
+            try
+            {
+                Graphics.DrawMeshInstanced(mesh, 0, mat, mats, n, null, shadows, receiveShadows);
+            }
+            catch (System.InvalidOperationException)
+            {
+                // Instancing truly unavailable (shouldn't happen) — draw one-by-one so
+                // the game keeps running instead of spamming the console.
+                for (int i = 0; i < n; i++)
+                    Graphics.DrawMesh(mesh, mats[i], mat, 0, null, 0, null, shadows, receiveShadows);
+            }
+        }
     }
 }
