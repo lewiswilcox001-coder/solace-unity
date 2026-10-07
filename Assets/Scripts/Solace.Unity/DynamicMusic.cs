@@ -36,7 +36,7 @@ namespace Solace.Unity
         // -- state -------------------------------------------------------------------
         private bool _built;
         private int _builtSeed = int.MinValue;
-        private bool _muted;
+        private bool _muted = true; // start muted until procedural audio is tuned
         private SeededRandom _rng;
 
         // One looping source per emotional layer.
