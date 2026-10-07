@@ -98,8 +98,9 @@ namespace Solace.Unity
             {
                 SetupVista();
             }
-            if (_boot != null && _boot.Hud != null)
-                _boot.Hud.ShowTitleCard("SOLACE", "a life, unfolding");
+            // Title card disabled — text wasn't rendering (black box bug). Skip for now.
+            // if (_boot != null && _boot.Hud != null)
+            //     _boot.Hud.ShowTitleCard("SOLACE", "a life, unfolding");
         }
 
         // -- accessibility fade overlay --------------------------------------------
