@@ -411,6 +411,8 @@ namespace Solace.Unity
             colossi.Build(world);
             var daynight = _worldRoot.AddComponent<DayNightCycle>();
             daynight.Build(world);
+            var aurora = _worldRoot.AddComponent<AuroraView>();
+            aurora.Build(world);
             var seasons = _worldRoot.AddComponent<SeasonView>();
             seasons.Build(world, terrain);
             var spirit = _worldRoot.AddComponent<SpiritFox>();

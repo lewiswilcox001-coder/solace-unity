@@ -58,6 +58,7 @@ namespace Solace.Unity
             var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.7f, 0.7f);
             var dark = MaterialFactory.Lit(Dark, 0.1f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
+            var rng = SeededRandom.Derive(poi.Id * 7919 + 13, "unity-den");
 
             // Earth dome.
             MeshFactory.AddMesh(root, "Dome", sphere, earth,
@@ -66,7 +67,6 @@ namespace Solace.Unity
             MeshFactory.AddMesh(root, "Entrance", sphere, dark,
                 new Vector3(0f, 0.1f, 4.6f), new Vector3(3.2f, 2.4f, 2.0f), Quaternion.identity);
             // Glow-moss patches around the mouth.
-            var rng = SeededRandom.Derive(poi.Id * 7919 + 13, "unity-den");
             for (int i = 0; i < 7; i++)
             {
                 float a = rng.NextFloat(0f, Mathf.PI * 2f);
@@ -74,6 +74,149 @@ namespace Solace.Unity
                 MeshFactory.AddMesh(root, "Moss" + i, MeshFactory.Disc(1f, 8), moss,
                     new Vector3(Mathf.Cos(a) * r, 0.15f, Mathf.Sin(a) * r),
                     Vector3.one * rng.NextFloat(0.7f, 1.6f), Quaternion.identity);
+            }
+
+            // The cozy layer: hearth-glow, vines, mushrooms, paw prints,
+            // a kit play hollow, and threshold stones. All emissive — no new
+            // real lights, so the 4-light budget is untouched.
+            BuildDenHearth(root, rng);
+            BuildDenVines(root, rng);
+            BuildDenMushrooms(root, rng);
+            BuildDenPawTrail(root, rng);
+            BuildDenPlayArea(root, rng);
+            BuildDenThreshold(root, rng);
+        }
+
+        private void BuildDenHearth(GameObject root, SeededRandom rng)
+        {
+            // The hearth: firelight glowing from inside the mouth, spilling
+            // onto the doorstep. A DenHearth component breathes the emission
+            // so it flickers like a lived-in fire — the den's warm heartbeat.
+            var glowColor = new Color(1.0f, 0.48f, 0.14f);
+            var hearthMat = MaterialFactory.NewLitEmissiveInstance(
+                new Color(0.42f, 0.15f, 0.04f), glowColor * 1.5f, 0.6f);
+            MeshFactory.AddMesh(root, "HearthGlow", MeshFactory.Disc(1.15f, 10), hearthMat,
+                new Vector3(0f, 0.30f, 6.1f), Vector3.one, Quaternion.identity);
+            // Ember coals nestled in the glow.
+            var emberMat = MaterialFactory.NewLitEmissiveInstance(
+                new Color(0.55f, 0.18f, 0.04f), new Color(1f, 0.55f, 0.15f) * 2f, 0.5f);
+            var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
+            for (int i = 0; i < 5; i++)
+            {
+                float a = rng.NextFloat(0f, Mathf.PI * 2f);
+                float r = rng.NextFloat(0.15f, 0.8f);
+                float s = rng.NextFloat(0.22f, 0.42f);
+                MeshFactory.AddMesh(root, "Ember" + i, sphere, emberMat,
+                    new Vector3(Mathf.Cos(a) * r, 0.30f, 6.1f + Mathf.Sin(a) * r),
+                    new Vector3(s, s * 0.55f, s), Quaternion.identity);
+            }
+            // Soft warm pool of light spilling from the mouth onto the ground.
+            var poolMat = MaterialFactory.LitEmissive(new Color(0.30f, 0.18f, 0.08f), glowColor * 0.22f, 0.9f);
+            MeshFactory.AddMesh(root, "HearthPool", MeshFactory.Disc(4.6f, 14), poolMat,
+                new Vector3(0f, 0.06f, 7.2f), new Vector3(1f, 1f, 0.75f), Quaternion.identity);
+
+            var hearth = root.AddComponent<DenHearth>();
+            hearth.Init(hearthMat, glowColor * 1.5f, rng.NextFloat(0f, 10f));
+        }
+
+        private void BuildDenVines(GameObject root, SeededRandom rng)
+        {
+            // Hanging moss-vines from the entrance arch — the den's green curtain.
+            var vine = MaterialFactory.Lit(new Color(0.16f, 0.34f, 0.18f), 0.4f);
+            var vineTip = MaterialFactory.LitEmissive(new Color(0.14f, 0.38f, 0.24f), MossGlow * 0.45f, 0.6f);
+            for (int i = 0; i < 8; i++)
+            {
+                float x = rng.NextFloat(-2.6f, 2.6f);
+                float z = rng.NextFloat(4.0f, 5.2f);
+                // Arch height falls off toward the sides.
+                float topY = 2.45f - Mathf.Abs(x) * 0.28f;
+                float len = rng.NextFloat(0.7f, 1.7f);
+                MeshFactory.AddMesh(root, "Vine" + i, MeshFactory.Cone(0.085f, len, 5),
+                    rng.NextFloat() < 0.35f ? vineTip : vine,
+                    new Vector3(x, topY, z), Vector3.one,
+                    Quaternion.Euler(180f, rng.NextFloat(0f, 360f), 0f));
+            }
+        }
+
+        private void BuildDenMushrooms(GameObject root, SeededRandom rng)
+        {
+            // Lantern mushrooms: little night-lights dotting the den's doorstep.
+            var stem = MaterialFactory.Lit(new Color(0.72f, 0.66f, 0.55f), 0.7f);
+            var capTeal = MaterialFactory.LitEmissive(new Color(0.10f, 0.35f, 0.32f),
+                new Color(0.15f, 0.85f, 0.75f) * 1.1f, 0.4f);
+            var capViolet = MaterialFactory.LitEmissive(new Color(0.22f, 0.12f, 0.35f),
+                new Color(0.55f, 0.35f, 0.95f) * 1.1f, 0.4f);
+            var cyl = MeshFactory.GetPrimitive(PrimitiveType.Cylinder);
+            var sph = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
+            for (int i = 0; i < 6; i++)
+            {
+                float a = rng.NextFloat(0f, Mathf.PI * 2f);
+                float r = rng.NextFloat(6.5f, 11f);
+                float s = rng.NextFloat(0.7f, 1.5f);
+                float px = Mathf.Cos(a) * r;
+                float pz = Mathf.Sin(a) * r;
+                // Keep the doorstep clear.
+                if (Mathf.Abs(px) < 3f && pz > 2f && pz < 9f) pz = 10.5f;
+                MeshFactory.AddMesh(root, "ShroomStem" + i, cyl, stem,
+                    new Vector3(px, 0.35f * s, pz),
+                    new Vector3(0.22f * s, 0.35f * s, 0.22f * s), Quaternion.identity);
+                MeshFactory.AddMesh(root, "ShroomCap" + i, sph, (i % 2 == 0) ? capTeal : capViolet,
+                    new Vector3(px, 0.72f * s, pz),
+                    new Vector3(0.62f * s, 0.30f * s, 0.62f * s), Quaternion.identity);
+            }
+        }
+
+        private void BuildDenPawTrail(GameObject root, SeededRandom rng)
+        {
+            // Tiny paw prints wandering out of the den — the kits were here.
+            var print = MaterialFactory.Lit(new Color(0.15f, 0.10f, 0.06f), 0.9f);
+            float x = 0.4f, z = 6.4f;
+            float dir = rng.NextFloat(-0.5f, 0.5f);
+            for (int i = 0; i < 9; i++)
+            {
+                float side = (i % 2 == 0) ? 0.24f : -0.24f;
+                float s = 1f - i * 0.06f;
+                MeshFactory.AddMesh(root, "Paw" + i, MeshFactory.Disc(0.17f, 6), print,
+                    new Vector3(x + side * s, 0.09f, z), Vector3.one * s, Quaternion.identity);
+                x += dir + rng.NextFloat(-0.35f, 0.35f);
+                z += rng.NextFloat(0.9f, 1.3f);
+            }
+        }
+
+        private void BuildDenPlayArea(GameObject root, SeededRandom rng)
+        {
+            // The play hollow: worn warm earth where kits wrestle, with pebble toys.
+            var worn = MaterialFactory.Lit(new Color(0.38f, 0.28f, 0.16f), 0.85f);
+            MeshFactory.AddMesh(root, "PlayHollow", MeshFactory.Disc(2.3f, 12), worn,
+                new Vector3(6.8f, 0.05f, 5.2f), Vector3.one, Quaternion.identity);
+            var pebble = MaterialFactory.Lit(new Color(0.50f, 0.48f, 0.45f), 0.5f);
+            var rock = MeshFactory.FacetedRock();
+            for (int i = 0; i < 3; i++)
+            {
+                float a = rng.NextFloat(0f, Mathf.PI * 2f);
+                float r = rng.NextFloat(0.5f, 1.7f);
+                MeshFactory.AddMesh(root, "Toy" + i, rock, pebble,
+                    new Vector3(6.8f + Mathf.Cos(a) * r, 0.12f, 5.2f + Mathf.Sin(a) * r),
+                    Vector3.one * rng.NextFloat(0.18f, 0.34f),
+                    Quaternion.Euler(0f, rng.NextFloat(0f, 360f), 0f));
+            }
+        }
+
+        private void BuildDenThreshold(GameObject root, SeededRandom rng)
+        {
+            // Threshold stones flanking the mouth, moss-capped — the den's doorposts.
+            var stone = MaterialFactory.Lit(Stone, 0.4f);
+            var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.7f, 0.7f);
+            var rock = MeshFactory.FacetedRock();
+            foreach (float sx in new float[] { -2.9f, 2.9f })
+            {
+                string side = sx < 0 ? "L" : "R";
+                MeshFactory.AddMesh(root, "Thresh" + side, rock, stone,
+                    new Vector3(sx, 0.55f, 5.1f),
+                    new Vector3(rng.NextFloat(0.9f, 1.2f), rng.NextFloat(1.1f, 1.5f), rng.NextFloat(0.9f, 1.2f)),
+                    Quaternion.Euler(0f, rng.NextFloat(0f, 360f), rng.NextFloat(-6f, 6f)));
+                MeshFactory.AddMesh(root, "ThreshMoss" + side, MeshFactory.Disc(0.8f, 7), moss,
+                    new Vector3(sx, 1.35f, 5.1f), Vector3.one * rng.NextFloat(0.8f, 1.1f), Quaternion.identity);
             }
         }
 
