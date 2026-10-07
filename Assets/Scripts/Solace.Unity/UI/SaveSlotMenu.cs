@@ -19,15 +19,6 @@ namespace Solace.Unity.UI
         private const int CardH = 500;
         private const int CardGap = 44;
 
-        /// <summary>The challenge mode new lives begin in. Cycled from the menu.</summary>
-        public static ChallengeMode SelectedMode = ChallengeMode.Standard;
-
-        private static readonly ChallengeMode[] ModeOrder = new ChallengeMode[]
-        {
-            ChallengeMode.Standard, ChallengeMode.Peaceful,
-            ChallengeMode.Hardcore, ChallengeMode.Speedrun,
-        };
-
         /// <summary>Shows the slot menu. The menu drives boot: it calls
         /// LoadSlot / NewLifeInSlot on the bootstrap, then destroys itself.</summary>
         public static void Show(GameBootstrap boot)
@@ -70,26 +61,6 @@ namespace Solace.Unity.UI
                     BuildDailyCard(root, boot, x0);
                 }
             }
-
-            // Challenge mode selector: applies to new lives begun from this menu.
-            var modeRt = UiKit.Rect(root, "ModeRow", 0.5f, 0f, 0.5f, 0f, -260f, 96f, 260f, 124f);
-            var modeBtn = UiKit.Cycle(modeRt, "ModeCycle", "new lives begin in:",
-                                      ChallengeModes.DisplayName(SelectedMode));
-            var modeVal = modeBtn.transform.Find("Value").GetComponent<Text>();
-            var descRt = UiKit.Rect(root, "ModeDesc", 0.5f, 0f, 0.5f, 0f, -420f, 124f, 420f, 152f);
-            var descT = UiKit.Label(descRt, "ModeDescText",
-                                    ChallengeModes.Description(SelectedMode),
-                                    14, UiKit.DimInk, TextAnchor.MiddleCenter);
-            UiKit.AddShadow(descT);
-            int modeIdx = Array.IndexOf(ModeOrder, SelectedMode);
-            if (modeIdx < 0) modeIdx = 0;
-            modeBtn.onClick.AddListener(() =>
-            {
-                modeIdx = (modeIdx + 1) % ModeOrder.Length;
-                SelectedMode = ModeOrder[modeIdx];
-                modeVal.text = ChallengeModes.DisplayName(SelectedMode);
-                descT.text = ChallengeModes.Description(SelectedMode);
-            });
 
             // Footer hint.
             var footRt = UiKit.Rect(root, "Footer", 0.5f, 0f, 0.5f, 0f, -400f, 40f, 400f, 80f);
@@ -155,18 +126,6 @@ namespace Solace.Unity.UI
             var seedT = UiKit.Label(seedRt, "SeedText", "seed " + info.Seed, 15, UiKit.DimInk, TextAnchor.MiddleCenter);
             y -= 28f;
 
-            // Challenge badge: show the mode this slot's run was begun in.
-            ChallengeState ch = null;
-            try { ch = ChallengeSave.Load(GameBootstrap.SaveDir, info.Slot); } catch { }
-            if (ch != null && ch.Mode != ChallengeMode.Standard)
-            {
-                var modeRt = UiKit.Rect(card, "Mode", 0f, 1f, 1f, 1f, 14f, y - 24f, -14f, y);
-                var modeT = UiKit.Label(modeRt, "ModeText", "◆ " + ChallengeModes.DisplayName(ch.Mode),
-                                        15, UiKit.Gold, TextAnchor.MiddleCenter);
-                UiKit.AddShadow(modeT);
-                y -= 28f;
-            }
-
             var timeRt = UiKit.Rect(card, "Time", 0f, 1f, 1f, 1f, 14f, y - 24f, -14f, y);
             var timeT = UiKit.Label(timeRt, "TimeText", FormatPlaytime(info.PlaytimeSeconds) + " in the vale", 15, UiKit.DimInk, TextAnchor.MiddleCenter);
             y -= 28f;
@@ -208,7 +167,7 @@ namespace Solace.Unity.UI
             }
             else
             {
-                boot.NewLifeInSlot(info.Slot, SelectedMode);
+                boot.NewLifeInSlot(info.Slot, ChallengeMode.Standard);
                 ok = true;
             }
             if (ok)
