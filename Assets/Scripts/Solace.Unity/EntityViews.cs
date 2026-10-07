@@ -264,7 +264,7 @@ namespace Solace.Unity
                 float h1 = ViewMotion.Frac(BoundId * 0.6180339f);
                 float h2 = ViewMotion.Frac(BoundId * 0.3819660f + 0.5f);
                 _rig = FoxRig.Build(transform, 0.92f + 0.07f * h1,
-                                        FoxRig.HatchVariant.Kindred, (h2 - 0.5f) * 1.2f);
+                                        HatchVariant.Kindred, (h2 - 0.5f) * 1.2f);
                 if (_rig != null)
                 {
                     _anim = _rig.Root.GetComponent<FoxAnimator>();
@@ -323,7 +323,7 @@ namespace Solace.Unity
             {
                 _built = true;
                 float h = ViewMotion.Frac(BoundId * 0.7548777f + 0.25f);
-                _rig = FoxRig.Build(transform, 0.52f + 0.07f * h, FoxRig.HatchVariant.Kit); // littermates vary
+                _rig = FoxRig.Build(transform, 0.52f + 0.07f * h, HatchVariant.Kit); // littermates vary
                 _rng = new System.Random(BoundId * 7919 + 13);
                 if (_rig != null)
                 {
