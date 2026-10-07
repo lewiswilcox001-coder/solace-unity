@@ -144,7 +144,7 @@ namespace Solace.Core
                 return "distance must be a number.";
             if (dist < 10f || dist > 60f)
                 return "distance must be between 10 and 60 meters.";
-            if (s.ToolBudgets.IsCoolingDown(Name, s.ElapsedSeconds))
+            if (s.ToolBudgets.IsCoolingDown(Name, (float)s.ElapsedSeconds))
                 return "spawn_encounter is resting (cooldown).";
             if (s.ToolBudgets.GetUseCount(Name) >= 8)
                 return "spawn_encounter has been used enough for one life.";
@@ -184,9 +184,9 @@ namespace Solace.Core
             commit();
             if (e == null) return "no dry ground in range — nothing appeared.";
             s.Entities.Add(e);
-            s.ToolBudgets.SetCooldown(Name, s.ElapsedSeconds, 1800f);
+            s.ToolBudgets.SetCooldown(Name, (float)s.ElapsedSeconds, 1800f);
             string seen = (kind == "predator" || kind == "wolf") ? "A gloom-maw" : "A " + kind;
-            s.Journal.Add(s.ElapsedSeconds,
+            s.Journal.Add((float)s.ElapsedSeconds,
                 seen + " stepped out of the " + BiomeWord(s.World.GetBiome(e.X, e.Z)) + ", close enough to see clearly.",
                 JournalCategory.Discovery, 0.5f, 1f, null, null, "tool:spawn_encounter");
             return "a " + kind + " appeared " + dist.ToString("F0") + "m away.";
@@ -221,7 +221,7 @@ namespace Solace.Core
             string w = Get(d, "weather", "");
             try { Enum.Parse(typeof(Weather), w, true); }
             catch { return "weather must be Clear, Cloudy, Rain, or Storm."; }
-            if (s.ToolBudgets.IsCoolingDown(Name, s.ElapsedSeconds))
+            if (s.ToolBudgets.IsCoolingDown(Name, (float)s.ElapsedSeconds))
                 return "the sky has changed recently enough (cooldown).";
             return null;
         }
@@ -231,8 +231,8 @@ namespace Solace.Core
             var d = ParseArgs(args);
             var w = (Weather)Enum.Parse(typeof(Weather), Get(d, "weather", "Clear"), true);
             s.Weather = w;
-            s.WeatherChangedAt = s.ElapsedSeconds;
-            s.ToolBudgets.SetCooldown(Name, s.ElapsedSeconds, 3600f);
+            s.WeatherChangedAt = (float)s.ElapsedSeconds;
+            s.ToolBudgets.SetCooldown(Name, (float)s.ElapsedSeconds, 3600f);
             string line;
             switch (w)
             {
@@ -241,7 +241,7 @@ namespace Solace.Core
                 case Weather.Rain: line = "Rain began to fall, hissing on the heather."; break;
                 default: line = "A storm came down off the high tops, sudden and loud."; break;
             }
-            s.Journal.Add(s.ElapsedSeconds, line, JournalCategory.Weather, 0.45f, 1f, null, null, "tool:set_weather");
+            s.Journal.Add((float)s.ElapsedSeconds, line, JournalCategory.Weather, 0.45f, 1f, null, null, "tool:set_weather");
             return "weather is now " + w + ".";
         }
     }
@@ -274,7 +274,7 @@ namespace Solace.Core
             var d = ParseArgs(args);
             var cat = (JournalCategory)Enum.Parse(typeof(JournalCategory), Get(d, "category", "Reflection"), true);
             string text = Get(d, "text", "");
-            s.Journal.Add(s.ElapsedSeconds, text, cat, 0.5f, 1f, null, null, "tool:add_journal");
+            s.Journal.Add((float)s.ElapsedSeconds, text, cat, 0.5f, 1f, null, null, "tool:add_journal");
             return "journal entry added.";
         }
     }
@@ -299,7 +299,7 @@ namespace Solace.Core
                 return "range must be a number.";
             if (range < 10f || range > 150f)
                 return "range must be between 10 and 150 meters.";
-            if (s.ToolBudgets.IsCoolingDown(Name, s.ElapsedSeconds))
+            if (s.ToolBudgets.IsCoolingDown(Name, (float)s.ElapsedSeconds))
                 return "reveal_poi is resting (cooldown).";
             return null;
         }
@@ -320,8 +320,8 @@ namespace Solace.Core
             if (best == null) return "no undiscovered place within range.";
             best.Discovered = true;
             s.Agent.KnownPoiIds.Add(best.Id);
-            s.ToolBudgets.SetCooldown(Name, s.ElapsedSeconds, 1800f);
-            s.Journal.Add(s.ElapsedSeconds,
+            s.ToolBudgets.SetCooldown(Name, (float)s.ElapsedSeconds, 1800f);
+            s.Journal.Add((float)s.ElapsedSeconds,
                 "I looked up and truly saw " + best.DisplayName + " for the first time.",
                 JournalCategory.Discovery, 0.55f, 1f, best.Id, null, "tool:reveal_poi");
             return "revealed " + best.DisplayName + ".";

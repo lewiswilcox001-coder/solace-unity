@@ -88,7 +88,7 @@ namespace Solace.Unity.Editor
                 Directory.CreateDirectory(_shotDir);
 
                 _journal0 = _boot.Sim.State.Journal.Count;
-                _elapsed0 = _boot.Sim.State.ElapsedSeconds;
+                _elapsed0 = (float)_boot.Sim.State.ElapsedSeconds;
                 Application.logMessageReceived += OnLog;
                 _t0 = EditorApplication.timeSinceStartup;
                 _lastT = _t0;
@@ -213,7 +213,7 @@ namespace Solace.Unity.Editor
 
                 var fails = new List<string>();
                 if (_errors > 0) fails.Add(_errors + " errors logged");
-                float advanced = _boot.Sim.State.ElapsedSeconds - _elapsed0;
+                float advanced = (float)(_boot.Sim.State.ElapsedSeconds - _elapsed0);
                 if (advanced < 30f) fails.Add("sim time advanced only " + advanced.ToString("F1") + "s");
                 int grown = _boot.Sim.State.Journal.Count - _journal0;
                 if (grown <= 0) fails.Add("journal did not grow");

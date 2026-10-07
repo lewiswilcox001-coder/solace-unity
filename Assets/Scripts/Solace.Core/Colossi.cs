@@ -103,7 +103,7 @@ namespace Solace.Core
         /// <summary>Advances colossi silently (used by the away-sim).</summary>
         public static void DriftQuietly(GameState s, SeededRandom rng, float seconds)
         {
-            Tick(s, rng, seconds, s.ElapsedSeconds, null);
+            Tick(s, rng, seconds, (float)s.ElapsedSeconds, null);
         }
     }
 }

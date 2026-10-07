@@ -45,7 +45,8 @@ namespace Solace.Core
         EmberHollow,
         Glowberry,
         TreeWalker,
-        SeedIsle
+        SeedIsle,
+        Crystal
     }
 
     public enum DreamMood
@@ -76,33 +77,35 @@ namespace Solace.Core
             switch (e)
             {
                 case DreamElement.River:
-                    return new[] { "the river was singing light", "water running bright uphill", "a river humming to itself" };
+                    return new[] { "the river was singing light", "water running bright uphill", "a river humming to itself", "a river flowing backward through time", "water that remembered every stone it ever touched" };
                 case DreamElement.Loch:
-                    return new[] { "still water holding the whole sky", "a loch so calm my reflection stayed behind" };
+                    return new[] { "still water holding the whole sky", "a loch so calm my reflection stayed behind", "a lake with no bottom, only stars going down" };
                 case DreamElement.NightGlow:
-                    return new[] { "the water lit from underneath, like the night had a pulse", "light moving slow under dark water" };
+                    return new[] { "the water lit from underneath, like the night had a pulse", "light moving slow under dark water", "the loch breathing light, in and out, in and out" };
                 case DreamElement.GlowMoss:
-                    return new[] { "moss burning soft and green in the dark", "the stones warm with green fire" };
+                    return new[] { "moss burning soft and green in the dark", "the stones warm with green fire", "moss that glowed brighter when I stopped to look" };
                 case DreamElement.HollowTree:
-                    return new[] { "a tree with a door of shadow in its side", "I slept inside a tree and it breathed around me" };
+                    return new[] { "a tree with a door of shadow in its side", "I slept inside a tree and it breathed around me", "a hollow tree full of sleeping light, like a lantern unlit" };
                 case DreamElement.Ruin:
-                    return new[] { "arches of chitin, empty as sky", "husk-circles where something enormous once stood" };
+                    return new[] { "arches of chitin, empty as sky", "husk-circles where something enormous once stood", "ruins that hummed when the wind passed through them, like a shell held to the ear" };
                 case DreamElement.Cairn:
-                    return new[] { "stones piled by hands I could not see", "a cairn that grew one stone each time I blinked" };
+                    return new[] { "stones piled by hands I could not see", "a cairn that grew one stone each time I blinked", "stones stacked so high they held up a piece of the sky" };
                 case DreamElement.Mist:
-                    return new[] { "mist that breathed when I breathed", "the mist parting like it knew my name" };
+                    return new[] { "mist that breathed when I breathed", "the mist parting like it knew my name", "mist so thick I could scoop it with my paws and it stayed" };
                 case DreamElement.Snow:
-                    return new[] { "snow that did not melt on my tongue", "white silence all the way up" };
+                    return new[] { "snow that did not melt on my tongue", "white silence all the way up", "snow falling upward, returning to the sky it came from" };
                 case DreamElement.Overlook:
-                    return new[] { "the whole vale laid out below me like a pelt", "I could see the river's entire thought at once" };
+                    return new[] { "the whole vale laid out below me like a pelt", "I could see the river's entire thought at once", "from the high place I could see yesterday and tomorrow at the same time" };
                 case DreamElement.EmberHollow:
-                    return new[] { "a warm dark that held me like a den", "glow-moss keeping the cold out" };
+                    return new[] { "a warm dark that held me like a den", "glow-moss keeping the cold out", "a hollow where the dark was kind and the moss remembered my name" };
                 case DreamElement.Glowberry:
-                    return new[] { "berries lit from within, too bright to eat", "fruit that glowed when I touched it" };
+                    return new[] { "berries lit from within, too bright to eat", "fruit that glowed when I touched it", "berries hanging like small moons, too beautiful to pick" };
                 case DreamElement.TreeWalker:
-                    return new[] { "a tree walking, slow as weather", "roots like legs crossing the valley" };
+                    return new[] { "a tree walking, slow as weather", "roots like legs crossing the valley", "a walker so tall its head was in tomorrow's weather" };
                 case DreamElement.SeedIsle:
-                    return new[] { "an island drifting with no wind", "a green raft sailing on still water" };
+                    return new[] { "an island drifting with no wind", "a green raft sailing on still water", "an isle adrift with a single tree on it, waving like a hand" };
+                case DreamElement.Crystal:
+                    return new[] { "a cave where the stones sang blue light", "crystals growing like frozen lightning, humming faint", "glass flowers blooming in the dark, lit from inside" };
                 default:
                     return new[] { "something I could not name" };
             }
@@ -113,17 +116,17 @@ namespace Solace.Core
             switch (mood)
             {
                 case DreamMood.Quiet:
-                    return rng.Pick(new[] { "and I was not afraid.", "and everything was still, and that was enough." });
+                    return rng.Pick(new[] { "and I was not afraid.", "and everything was still, and that was enough.", "and the silence was a kind of music I almost understood." });
                 case DreamMood.Bright:
-                    return rng.Pick(new[] { "and my chest-light burned brighter to see it.", "and I woke glowing." });
+                    return rng.Pick(new[] { "and my chest-light burned brighter to see it.", "and I woke glowing.", "and the brightness stayed behind my eyes after I woke." });
                 case DreamMood.Strange:
-                    return rng.Pick(new[] { "and I woke unsure whether I had dreamed it or remembered it.", "and something in it was looking back at me." });
+                    return rng.Pick(new[] { "and I woke unsure whether I had dreamed it or remembered it.", "and something in it was looking back at me.", "and I understood it completely, and then forgot, the way dreams do." });
                 case DreamMood.Warm:
-                    return rng.Pick(new[] { "and I felt held, the way the den holds.", "and I did not want to wake." });
+                    return rng.Pick(new[] { "and I felt held, the way the den holds.", "and I did not want to wake.", "and I was warm all the way through, the way food never quite manages." });
                 case DreamMood.Vast:
-                    return rng.Pick(new[] { "and I felt very small, and glad of it.", "and the sky went on longer than I could follow." });
+                    return rng.Pick(new[] { "and I felt very small, and glad of it.", "and the sky went on longer than I could follow.", "and I understood how big the world is, and how lucky I am to be lost in it." });
                 case DreamMood.Lonely:
-                    return rng.Pick(new[] { "and no one else was there, and that was the dream.", "and I called out, and only the mist answered." });
+                    return rng.Pick(new[] { "and no one else was there, and that was the dream.", "and I called out, and only the mist answered.", "and I woke with the feeling of an empty den beside me." });
                 default:
                     return "and then I woke.";
             }
@@ -145,6 +148,7 @@ namespace Solace.Core
                 case DreamElement.EmberHollow:
                 case DreamElement.Glowberry:
                 case DreamElement.Overlook:
+                case DreamElement.Crystal:
                     return true;
                 default:
                     return false;
@@ -170,6 +174,12 @@ namespace Solace.Core
                     return new List<DreamElement> { DreamElement.Ruin, DreamElement.Cairn };
                 case PoiType.Overlook:
                     return new List<DreamElement> { DreamElement.Overlook, DreamElement.Mist };
+                case PoiType.CrystalCave:
+                    return new List<DreamElement> { DreamElement.Crystal, DreamElement.NightGlow };
+                case PoiType.HotSpring:
+                    return new List<DreamElement> { DreamElement.EmberHollow, DreamElement.Mist };
+                case PoiType.HollowLog:
+                    return new List<DreamElement> { DreamElement.HollowTree, DreamElement.GlowMoss };
                 default:
                     return new List<DreamElement>();
             }
@@ -187,6 +197,7 @@ namespace Solace.Core
                 case DreamElement.EmberHollow: return PoiType.EmberHollow;
                 case DreamElement.Glowberry: return PoiType.GlowberryBush;
                 case DreamElement.Overlook: return PoiType.Overlook;
+                case DreamElement.Crystal: return PoiType.CrystalCave;
                 default: return PoiType.Cairn;
             }
         }
@@ -206,6 +217,12 @@ namespace Solace.Core
                     return rng.Pick(new[] { "the bright berries", "the too-bright bush" });
                 case PoiType.Overlook:
                     return rng.Pick(new[] { "the far-seeing place", "the sky's edge" });
+                case PoiType.CrystalCave:
+                    return rng.Pick(new[] { "the singing deep", "the glass hollow", "the star-throat" });
+                case PoiType.HotSpring:
+                    return rng.Pick(new[] { "the warm vein", "the steaming pool", "the earth's breath" });
+                case PoiType.HollowLog:
+                    return rng.Pick(new[] { "the hollow giant", "the den-log", "the tumbled pine" });
                 default:
                     return "the dreamed place";
             }

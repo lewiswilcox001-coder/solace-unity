@@ -28,6 +28,15 @@ namespace Solace.Unity
         public static readonly Color HealthRed = new Color(0.78f, 0.22f, 0.20f);
         public static readonly Color LightGreen = new Color(0.35f, 0.85f, 0.45f);
         public static readonly Color HungerAmber = new Color(0.92f, 0.66f, 0.25f);
+        // -- storybook / ambient additions -------------------------------------
+        /// <summary>Warm dark parchment for the Chronicle and Pack panels.</summary>
+        public static readonly Color Parchment = new Color(0.13f, 0.10f, 0.065f, 0.94f);
+        /// <summary>Warm cream ink for parchment panels.</summary>
+        public static readonly Color ParchmentInk = new Color(0.93f, 0.86f, 0.71f);
+        public static readonly Color GoldDim = new Color(0.72f, 0.55f, 0.28f);
+        /// <summary>Barely-there glass for HUD chrome.</summary>
+        public static readonly Color WhisperPanel = new Color(0.05f, 0.04f, 0.07f, 0.28f);
+        public static readonly Color GlassPanel = new Color(0.05f, 0.04f, 0.07f, 0.45f);
 
         /// <summary>Screen-space canvas + scaler + raycaster + event system.</summary>
         public static Canvas CreateCanvas(string name, int sortOrder)
@@ -126,6 +135,80 @@ namespace Solace.Unity
             return input;
         }
 
+        /// <summary>A labeled horizontal slider. Returns the Slider.</summary>
+        public static Slider Slider(Transform parent, string name, string label,
+                                    float min, float max, float value, float width)
+        {
+            var row = Rect(parent, name, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 28f);
+            var lab = Label(row, "Lab", label, 13, Ink, TextAnchor.MiddleLeft);
+            lab.GetComponent<RectTransform>().offsetMax = new Vector2(-(width + 64f), 0f);
+            var sliderRt = Rect(row, "Slider", 1f, 0f, 1f, 1f, -(width + 56f), 4f, -56f, -4f);
+            var slider = sliderRt.gameObject.AddComponent<UnityEngine.UI.Slider>();
+            slider.minValue = min; slider.maxValue = max; slider.value = value;
+            // Track.
+            var bg = sliderRt.gameObject.AddComponent<Image>();
+            bg.color = new Color(0f, 0f, 0f, 0.6f);
+            // Fill.
+            var fillRt = Rect(sliderRt, "Fill", 0f, 0f, 1f, 1f, 0f, 0f, 0f, 0f);
+            var fill = fillRt.gameObject.AddComponent<Image>();
+            fill.color = new Color(0.72f, 0.55f, 0.28f, 0.9f); // gold
+            fill.type = Image.Type.Filled;
+            fill.fillMethod = Image.FillMethod.Horizontal;
+            // Handle.
+            var handleRt = Rect(sliderRt, "Handle", 0f, 0f, 0f, 1f, -7f, -3f, 7f, 3f);
+            var handle = handleRt.gameObject.AddComponent<Image>();
+            handle.color = new Color(0.95f, 0.88f, 0.70f, 1f);
+            slider.fillRect = fillRt;
+            slider.handleRect = handleRt;
+            slider.targetGraphic = handle;
+            // Value label.
+            var valLab = Label(row, "Val", Mathf.RoundToInt(value * 100) + "%", 12, DimInk, TextAnchor.MiddleRight);
+            valLab.GetComponent<RectTransform>().anchorMin = new Vector2(1f, 0f);
+            valLab.GetComponent<RectTransform>().anchorMax = new Vector2(1f, 1f);
+            valLab.GetComponent<RectTransform>().offsetMin = new Vector2(-52f, 0f);
+            valLab.GetComponent<RectTransform>().offsetMax = new Vector2(-4f, 0f);
+            slider.onValueChanged.AddListener(v =>
+            {
+                valLab.text = Mathf.RoundToInt(v * 100) + "%";
+            });
+            return slider;
+        }
+
+        /// <summary>A labeled toggle button showing On/Off. Returns the Button; caller wires onClick.</summary>
+        public static Button Toggle(Transform parent, string name, string label, bool value)
+        {
+            var row = Rect(parent, name, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 28f);
+            var lab = Label(row, "Lab", label, 13, Ink, TextAnchor.MiddleLeft);
+            lab.GetComponent<RectTransform>().offsetMax = new Vector2(-140f, 0f);
+            var btnRt = Rect(row, "Btn", 1f, 0f, 1f, 1f, -132f, 2f, -8f, -2f);
+            var img = btnRt.gameObject.AddComponent<Image>();
+            var btn = btnRt.gameObject.AddComponent<Button>();
+            var t = Label(btnRt, "Text", value ? "On" : "Off", 13,
+                value ? new Color(0.65f, 0.95f, 0.65f) : DimInk, TextAnchor.MiddleCenter);
+            btn.onClick.AddListener(() =>
+            {
+                bool on = t.text != "On";
+                t.text = on ? "On" : "Off";
+                t.color = on ? new Color(0.65f, 0.95f, 0.65f) : DimInk;
+            });
+            return btn;
+        }
+
+        /// <summary>A labeled cycle button (click to advance through options). Returns Button + label setter.</summary>
+        public static Button Cycle(Transform parent, string name, string label, string value)
+        {
+            var row = Rect(parent, name, 0f, 0f, 1f, 0f, 0f, 0f, 0f, 28f);
+            var lab = Label(row, "Lab", label, 13, Ink, TextAnchor.MiddleLeft);
+            lab.GetComponent<RectTransform>().offsetMax = new Vector2(-180f, 0f);
+            var btnRt = Rect(row, "Btn", 1f, 0f, 1f, 1f, -172f, 2f, -8f, -2f);
+            var img = btnRt.gameObject.AddComponent<Image>();
+            img.color = new Color(0.16f, 0.13f, 0.18f, 0.9f);
+            var btn = btnRt.gameObject.AddComponent<Button>();
+            var t = Label(btnRt, "Text", value, 13, Ink, TextAnchor.MiddleCenter);
+            t.name = "Value";
+            return btn;
+        }
+
         /// <summary>A labeled horizontal bar. Returns the fill Image.</summary>
         public static Image Bar(Transform parent, string name, string label, Color fillColor,
                                 float width)
@@ -160,6 +243,106 @@ namespace Solace.Unity
                 }
             _dotTex.Apply();
             return _dotTex;
+        }
+
+        private static Sprite _dotSprite;
+        public static Sprite DotSprite()
+        {
+            if (_dotSprite == null)
+                _dotSprite = Sprite.Create(DotTexture(), new Rect(0f, 0f, 24f, 24f), new Vector2(0.5f, 0.5f));
+            return _dotSprite;
+        }
+
+        private static Texture2D _softTex;
+        /// <summary>Radial-gradient glow texture (white core fading to transparent).</summary>
+        public static Texture2D SoftTexture()
+        {
+            if (_softTex != null) return _softTex;
+            int s = 64;
+            _softTex = new Texture2D(s, s, TextureFormat.RGBA32, false);
+            for (int y = 0; y < s; y++)
+                for (int x = 0; x < s; x++)
+                {
+                    float dx = (x + 0.5f) / s * 2f - 1f;
+                    float dy = (y + 0.5f) / s * 2f - 1f;
+                    float d = Mathf.Clamp01(Mathf.Sqrt(dx * dx + dy * dy));
+                    float a = 1f - d;
+                    _softTex.SetPixel(x, y, new Color(1f, 1f, 1f, a * a));
+                }
+            _softTex.Apply();
+            return _softTex;
+        }
+
+        private static Sprite _softSprite;
+        public static Sprite SoftSprite()
+        {
+            if (_softSprite == null)
+                _softSprite = Sprite.Create(SoftTexture(), new Rect(0f, 0f, 64f, 64f), new Vector2(0.5f, 0.5f));
+            return _softSprite;
+        }
+
+        private static Texture2D _ringTex;
+        /// <summary>Thin soft-edged ring texture (white). Use with Image.Type.Filled + Radial360 for gauges.</summary>
+        public static Texture2D RingTexture()
+        {
+            if (_ringTex != null) return _ringTex;
+            int s = 96;
+            _ringTex = new Texture2D(s, s, TextureFormat.RGBA32, false);
+            for (int y = 0; y < s; y++)
+                for (int x = 0; x < s; x++)
+                {
+                    float dx = (x + 0.5f) / s * 2f - 1f;
+                    float dy = (y + 0.5f) / s * 2f - 1f;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    float band = 1f - Mathf.Clamp01(Mathf.Abs(d - 0.84f) / 0.07f);
+                    _ringTex.SetPixel(x, y, new Color(1f, 1f, 1f, band));
+                }
+            _ringTex.Apply();
+            return _ringTex;
+        }
+
+        private static Sprite _ringSprite;
+        public static Sprite RingSprite()
+        {
+            if (_ringSprite == null)
+                _ringSprite = Sprite.Create(RingTexture(), new Rect(0f, 0f, 96f, 96f), new Vector2(0.5f, 0.5f));
+            return _ringSprite;
+        }
+
+        /// <summary>Soft drop shadow for text readability over bright scenes.</summary>
+        public static Text AddShadow(Text t, float alpha)
+        {
+            var sh = t.gameObject.AddComponent<Shadow>();
+            sh.effectColor = new Color(0f, 0f, 0f, alpha);
+            sh.effectDistance = new Vector2(1.5f, -1.5f);
+            return t;
+        }
+
+        public static Text AddShadow(Text t) { return AddShadow(t, 0.55f); }
+
+        /// <summary>Thin horizontal hairline (1px via offsets).</summary>
+        public static RectTransform Divider(Transform parent, string name, Color color,
+            float ax0, float ay0, float ax1, float ay1,
+            float ox0, float oy0, float ox1, float oy1)
+        {
+            var rt = Rect(parent, name, ax0, ay0, ax1, ay1, ox0, oy0, ox1, oy1);
+            var img = rt.gameObject.AddComponent<Image>();
+            img.color = color;
+            img.raycastTarget = false;
+            return rt;
+        }
+
+        /// <summary>Letterspaced caps, e.g. "CHAPTER" -> "C H A P T E R".</summary>
+        public static string Spaced(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return s;
+            var sb = new System.Text.StringBuilder(s.Length * 2);
+            for (int i = 0; i < s.Length; i++)
+            {
+                if (i > 0) sb.Append(' ');
+                sb.Append(s[i]);
+            }
+            return sb.ToString();
         }
 
         public static string Roman(int n)

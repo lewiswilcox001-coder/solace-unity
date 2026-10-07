@@ -93,7 +93,7 @@ namespace Solace.Core
             a.Health = Math.Max(a.Health, 25f); // quiet life never harms
             a.Curiosity = Math.Min(100f, a.Curiosity + (float)hours * 2f);
 
-            s.Social.Decay(s.ElapsedSeconds, (float)seconds);
+            s.Social.Decay((float)s.ElapsedSeconds, (float)seconds);
             RegrowBushes(s, seconds);
             AgeQuietly(s, seconds);
             SickenQuietly(s, seconds, ev);
@@ -114,7 +114,7 @@ namespace Solace.Core
                     "A quiet stretch. I mended my pack, watched the weather turn, and thought of little.",
                     "Nothing much happened, and that was fine. The ember stayed lit; I stayed fed."
                 };
-                s.Journal.Add(s.ElapsedSeconds, templates[ev.NextInt(templates.Length)],
+                s.Journal.Add((float)s.ElapsedSeconds, templates[ev.NextInt(templates.Length)],
                     JournalCategory.Reflection, 0.35f);
             }
 
@@ -138,7 +138,7 @@ namespace Solace.Core
                 if (!a.VigorForeshadowed)
                 {
                     a.VigorForeshadowed = true;
-                    s.Journal.Add(s.ElapsedSeconds,
+                    s.Journal.Add((float)s.ElapsedSeconds,
                         "While you were away I felt my light thinning — evening coming on. I am old now.",
                         JournalCategory.Reflection, 0.9f);
                 }
@@ -156,7 +156,7 @@ namespace Solace.Core
                 {
                     a.Sickness = SicknessKind.DimCough;
                     a.SicknessSeverity = 0.25f;
-                    s.Journal.Add(s.ElapsedSeconds,
+                    s.Journal.Add((float)s.ElapsedSeconds,
                         "I came down with the dim-cough while you were gone. It passed slowly.",
                         JournalCategory.Survival, 0.5f);
                 }
@@ -215,7 +215,7 @@ namespace Solace.Core
                 {
                     a.Hunger = MathX.Clamp(a.Hunger - 35f, 0f, 100f);
                     if (ev.NextFloat() < 0.25f)
-                        s.Journal.Add(s.ElapsedSeconds, "I found enough to eat along the way.",
+                        s.Journal.Add((float)s.ElapsedSeconds, "I found enough to eat along the way.",
                             JournalCategory.Survival, 0.2f);
                 }
                 if (a.Thirst > 72f) a.Thirst = 25f;
@@ -260,13 +260,13 @@ namespace Solace.Core
                         float dmg = ev.NextFloat(5f, 15f);
                         a.Health = MathX.Clamp(a.Health - dmg, 0f, 100f);
                         a.Traits.Nudge("Caution", 0.02f);
-                        s.Journal.Add(s.ElapsedSeconds,
+                        s.Journal.Add((float)s.ElapsedSeconds,
                             "A gloom-maw shadowed me on the fell while you were gone. I got away, but it cost me.",
                             JournalCategory.Combat, 0.8f);
                     }
                     else if (roll < 0.50f)
                     {
-                        s.Journal.Add(s.ElapsedSeconds,
+                        s.Journal.Add((float)s.ElapsedSeconds,
                             "I stood a while and watched deer move through the mist. It steadied me.",
                             JournalCategory.Travel, 0.3f);
                         a.Mood = MathX.Clamp(a.Mood + 4f, 0f, 100f);
@@ -274,20 +274,20 @@ namespace Solace.Core
                     else if (roll < 0.70f)
                     {
                         a.Hunger = MathX.Clamp(a.Hunger - 20f, 0f, 100f);
-                        s.Journal.Add(s.ElapsedSeconds,
+                        s.Journal.Add((float)s.ElapsedSeconds,
                             "I found berries along the way and ate my fill.",
                             JournalCategory.Survival, 0.3f);
                     }
                     else if (roll < 0.85f)
                     {
-                        s.Journal.Add(s.ElapsedSeconds,
+                        s.Journal.Add((float)s.ElapsedSeconds,
                             "The weather turned while I walked; I pulled my light in close and kept going.",
                             JournalCategory.Weather, 0.3f);
                     }
                     else
                     {
                         a.Mood = MathX.Clamp(a.Mood + 5f, 0f, 100f);
-                        s.Journal.Add(s.ElapsedSeconds,
+                        s.Journal.Add((float)s.ElapsedSeconds,
                             "For a little while the light on the loch was so beautiful I just stopped.",
                             JournalCategory.Reflection, 0.4f);
                     }
@@ -304,7 +304,7 @@ namespace Solace.Core
                     }
                     // Absence is never a death sentence without a logged cause.
                     a.Health = 5f;
-                    s.Journal.Add(s.ElapsedSeconds,
+                    s.Journal.Add((float)s.ElapsedSeconds,
                         "I pushed too far and nearly didn't come back. I found shelter in time — barely.",
                         JournalCategory.Survival, 0.85f);
                 }
@@ -321,7 +321,7 @@ namespace Solace.Core
                 if (a.Hunger < 75f && a.Thirst < 75f)
                     a.Health = Math.Min(100f, a.Health + (float)hours * 1f);
                 if (a.Health <= 0f) a.Health = 5f;
-                s.Social.Decay(s.ElapsedSeconds, (float)quietSeconds);
+                s.Social.Decay((float)s.ElapsedSeconds, (float)quietSeconds);
                 RegrowBushes(s, seconds);
             }
 
@@ -334,7 +334,7 @@ namespace Solace.Core
         {
             poi.Discovered = true;
             s.Agent.KnownPoiIds.Add(poi.Id);
-            s.Journal.Add(s.ElapsedSeconds,
+            s.Journal.Add((float)s.ElapsedSeconds,
                 "I reached " + poi.DisplayName + " while you were away. " + DiscoveryLine(poi) + ".",
                 JournalCategory.Discovery, 0.7f, 1f, poi.Id);
         }
@@ -355,7 +355,11 @@ namespace Solace.Core
         private static void RegrowBushes(GameState s, double seconds)
         {
             double days = seconds / 86400.0;
-            int regrow = (int)(days * 1.5);
+            // Berries return with the season: summer feasts, winter starves.
+            // (Uses the season at catch-up time; a long absence spanning
+            // seasons approximates with the current one.)
+            float abundance = SeasonSystem.FoodAbundance(SeasonSystem.Current(s));
+            int regrow = (int)(days * 1.5 * abundance);
             if (regrow <= 0) return;
             foreach (var poi in s.World.Pois)
                 if (poi.Type == PoiType.GlowberryBush)
@@ -394,10 +398,10 @@ namespace Solace.Core
                     {
                         s.Weather = next;
                         if (next == Weather.Rain)
-                            s.Journal.Add(s.ElapsedSeconds, "Rain came while you were gone, drumming on the heather.",
+                            s.Journal.Add((float)s.ElapsedSeconds, "Rain came while you were gone, drumming on the heather.",
                                 JournalCategory.Weather, 0.25f);
                         else if (next == Weather.Storm)
-                            s.Journal.Add(s.ElapsedSeconds, "A storm rolled through the vale in your absence.",
+                            s.Journal.Add((float)s.ElapsedSeconds, "A storm rolled through the vale in your absence.",
                                 JournalCategory.Weather, 0.4f);
                     }
                 }

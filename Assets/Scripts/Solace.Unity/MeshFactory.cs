@@ -118,6 +118,57 @@ namespace Solace.Unity
             return mesh;
         }
 
+        /// <summary>
+        /// Merges transformed meshes into one mesh with multiple submeshes (one
+        /// per material slot). Unlike Merge(), this preserves the source normals
+        /// exactly (via inverse-transpose transform) so flat-shaded facets look
+        /// identical — no RecalculateNormals. Use for baking static creature
+        /// body parts into a single draw call per material.
+        /// </summary>
+        public static Mesh MergeWithSubmeshes(List<Mesh> meshes, List<Matrix4x4> transforms,
+                                              List<int> materialSlots, int submeshCount)
+        {
+            var verts = new List<Vector3>();
+            var normals = new List<Vector3>();
+            var uvs = new List<Vector2>();
+            var subTris = new List<int>[submeshCount];
+            for (int s = 0; s < submeshCount; s++) subTris[s] = new List<int>();
+
+            for (int i = 0; i < meshes.Count; i++)
+            {
+                Mesh m = meshes[i];
+                Matrix4x4 t = transforms[i];
+                // Inverse-transpose for correct normals under non-uniform scale.
+                Matrix4x4 nt = Matrix4x4.Transpose(Matrix4x4.Inverse(t));
+                Vector3[] mv = m.vertices;
+                Vector3[] mn = m.normals;
+                Vector2[] muv = m.uv;
+                bool hasNormals = mn != null && mn.Length == mv.Length;
+                bool hasUvs = muv != null && muv.Length == mv.Length;
+                int base_ = verts.Count;
+                for (int v = 0; v < mv.Length; v++)
+                {
+                    verts.Add(t.MultiplyPoint3x4(mv[v]));
+                    normals.Add(hasNormals
+                        ? Vector3.Normalize(nt.MultiplyVector(mn[v]))
+                        : Vector3.up);
+                    uvs.Add(hasUvs ? muv[v] : Vector2.zero);
+                }
+                int slot = Mathf.Clamp(materialSlots[i], 0, submeshCount - 1);
+                int[] mt = m.triangles;
+                for (int ti = 0; ti < mt.Length; ti++) subTris[slot].Add(base_ + mt[ti]);
+            }
+
+            var mesh = new Mesh();
+            mesh.SetVertices(verts);
+            mesh.SetNormals(normals);
+            mesh.SetUVs(0, uvs);
+            mesh.subMeshCount = submeshCount;
+            for (int s = 0; s < submeshCount; s++) mesh.SetTriangles(subTris[s], s);
+            mesh.RecalculateBounds();
+            return mesh;
+        }
+
         /// <summary>A tall slender foxpine crown: three stacked cones, merged.</summary>
         public static Mesh PineCrown()
         {

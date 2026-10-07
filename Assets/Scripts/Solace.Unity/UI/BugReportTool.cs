@@ -42,6 +42,9 @@ namespace Solace.Unity
         {
             if (Input.GetKeyDown(KeyCode.F12))
                 Capture();
+            // Gamepad: Back+Start chord fires a bug report (F12 equivalent).
+            if (GamepadInput.IsConnected && GamepadInput.ChordDown(PadButton.Back, PadButton.Start))
+                Capture();
         }
 
         public void Capture()
@@ -87,7 +90,7 @@ namespace Solace.Unity
             var sb = new StringBuilder(4096);
             sb.AppendLine("SOLACE bug report");
             sb.AppendLine("wall clock (UTC): " + DateTime.UtcNow.ToString("o"));
-            sb.AppendLine("game time: " + UiKit.FormatGameTime(s.ElapsedSeconds) +
+            sb.AppendLine("game time: " + UiKit.FormatGameTime((float)s.ElapsedSeconds) +
                           " (" + s.ElapsedSeconds.ToString("F1") + "s elapsed)");
             sb.AppendLine("seed: " + s.Seed);
             sb.AppendLine("generation: " + s.Lineage.Generation + " (" + UiKit.Roman(s.Lineage.Generation) + ")");

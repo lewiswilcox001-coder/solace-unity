@@ -41,6 +41,11 @@ namespace Solace.Unity.Character
                 _time = 0f; _fading = false; // restart same clip
                 return;
             }
+            // Locomotion blends are choreographed: adjacent gaits melt into each
+            // other, big changes (run→idle) settle a touch longer, one-shots keep
+            // the caller's snap. No more robotic popping between gaits.
+            if (IsLocomotion(_current) && IsLocomotion(clip))
+                fadeTime = LocomotionFade(_current, clip);
             // snapshot current pose for the crossfade
             SampleClip(_cd, ClipTime(), _fromA, ref _fromRoot);
             _current = clip;
@@ -53,16 +58,43 @@ namespace Solace.Unity.Character
 
         public Clip Current => _current;
 
+        static bool IsLocomotion(Clip c) =>
+            c == Clip.Idle || c == Clip.Walk || c == Clip.Trot || c == Clip.Run;
+
+        /// <summary>Buttery blend durations between locomotion states.</summary>
+        static float LocomotionFade(Clip from, Clip to)
+        {
+            if (from == to) return 0.2f;
+            int Rank(Clip c) => c == Clip.Idle ? 0 : c == Clip.Walk ? 1 : c == Clip.Trot ? 2 : 3;
+            int d = Mathf.Abs(Rank(from) - Rank(to));
+            // adjacent gait: long melt; two apart: medium; idle<->run: full settle
+            return d == 1 ? 0.38f : d == 2 ? 0.30f : 0.45f;
+        }
+
+        /// <summary>
+        /// Gait playback rate multiplier. Driven by FoxRig from the fox's real
+        /// visual speed so paws track the ground (Walk/Trot/Run only; everything
+        /// else always plays at 1×). Smoothed by the caller.
+        /// </summary>
+        public float PlaybackRate { get; set; } = 1f;
+
         // ---------------------------------------------------------------- state
 
         FoxRig _rig;
         readonly Transform[] _jt = new Transform[JCount];
+        Transform _motionRoot;
         Vector3 _rootBase;
         bool _bound;
 
         Clip _current = Clip.Idle;
         ClipData _cd;
         float _time;
+
+        // ---- idle-life overlay (procedural, additive on top of the clip pose)
+        float _twitchT = 2f;      // countdown to next ear twitch
+        float _twitchAge = 99f;   // time since current twitch started
+        int _twitchEar;           // 0 = L, 1 = R
+        float _idleT;             // free-running clock for sway/drift
 
         readonly float[] _fromA = new float[JCount * 3];
         Vector3 _fromRoot;
@@ -90,7 +122,8 @@ namespace Solace.Unity.Character
             _jt[(int)J.FRU] = _rig.LegFR_Upper; _jt[(int)J.FRL] = _rig.LegFR_Lower; _jt[(int)J.FRP] = _rig.LegFR_Paw;
             _jt[(int)J.BLU] = _rig.LegBL_Upper; _jt[(int)J.BLL] = _rig.LegBL_Lower; _jt[(int)J.BLP] = _rig.LegBL_Paw;
             _jt[(int)J.BRU] = _rig.LegBR_Upper; _jt[(int)J.BRL] = _rig.LegBR_Lower; _jt[(int)J.BRP] = _rig.LegBR_Paw;
-            _rootBase = _rig.Root.localPosition;
+            _motionRoot = _rig.MotionRoot != null ? _rig.MotionRoot : _rig.Root;
+            _rootBase = _motionRoot.localPosition;
             _bound = true;
         }
 
@@ -98,7 +131,10 @@ namespace Solace.Unity.Character
         {
             EnsureBound();
             if (!_bound || _cd == null) return;
-            _time += Time.deltaTime;
+            // Gait clips track the fox's real ground speed; all other clips play at 1×.
+            bool gait = _current == Clip.Walk || _current == Clip.Trot || _current == Clip.Run;
+            _time += Time.deltaTime * (gait ? Mathf.Max(PlaybackRate, 0.05f) : 1f);
+            _idleT += Time.deltaTime;
             SampleClip(_cd, ClipTime(), _sampleA, ref _sampleRoot);
             if (_fading)
             {
@@ -114,9 +150,49 @@ namespace Solace.Unity.Character
                 _sampleA.CopyTo(_outA, 0);
                 _outRoot = _sampleRoot;
             }
+            ApplyIdleLife();
             for (int j = 0; j < JCount; j++)
                 _jt[j].localEulerAngles = new Vector3(_outA[j * 3], _outA[j * 3 + 1], _outA[j * 3 + 2]);
-            _rig.Root.localPosition = _rootBase + _outRoot;
+            if (_motionRoot != null)
+                _motionRoot.localPosition = _rootBase + _outRoot;
+        }
+
+        /// <summary>
+        /// Procedural aliveness on top of the clip pose: ear twitches, tail sway,
+        /// micro head drift. Only when the fox is at rest — never fights locomotion.
+        /// </summary>
+        void ApplyIdleLife()
+        {
+            bool resting = _current == Clip.Idle || _current == Clip.Sit || _current == Clip.Sleep;
+            if (!resting) return;
+            float calm = _current == Clip.Sleep ? 0.35f : 1f; // asleep: barely-there
+
+            // Ear twitch: every few seconds one ear flicks back, decaying.
+            _twitchT -= Time.deltaTime;
+            _twitchAge += Time.deltaTime;
+            if (_twitchT <= 0f)
+            {
+                _twitchT = UnityEngine.Random.Range(1.8f, 5.0f) * (2f - calm);
+                _twitchAge = 0f;
+                _twitchEar = UnityEngine.Random.value < 0.5f ? 0 : 1;
+            }
+            if (_twitchAge < 0.6f)
+            {
+                float env = Mathf.Exp(-5f * _twitchAge);
+                float flick = env * 24f * Mathf.Sin(_twitchAge * 34f) * calm;
+                int ear = _twitchEar == 0 ? (int)J.EarL : (int)J.EarR;
+                _outA[ear * 3] += flick; // pitch the ear back briefly
+            }
+
+            // Tail sway: slow, continuous, like a thought drifting by.
+            float sway = Mathf.Sin(_idleT * 1.25f) * 5f * calm;
+            float sway2 = Mathf.Sin(_idleT * 1.25f + 0.6f) * 3f * calm;
+            _outA[(int)J.TailTip * 3 + 1] += sway;
+            _outA[(int)J.TailMid * 3 + 1] += sway2;
+
+            // Head micro-drift: the fox is always faintly noticing things.
+            _outA[(int)J.Head * 3 + 1] += Mathf.Sin(_idleT * 0.31f + 1.2f) * 2.2f * calm;
+            _outA[(int)J.Head * 3] += Mathf.Sin(_idleT * 0.43f + 0.4f) * 1.2f * calm;
         }
 
         float ClipTime() => _cd.loop ? _time % _cd.dur : Mathf.Min(_time, _cd.dur);

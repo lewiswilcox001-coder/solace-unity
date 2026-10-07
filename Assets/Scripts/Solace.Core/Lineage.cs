@@ -230,6 +230,7 @@ namespace Solace.Core
         public int MotherId = -1;  // kindred entity id, if known
         public int FatherId = -1;  // protagonist agent id
         public float LightShade = 0.5f; // inherited hue 0..1
+        public Personality Traits = new Personality(); // inherited temperament 0..1 per trait
         public float Forage;       // learned skills 0..1
         public float Notice;
         public float Hide;
@@ -258,6 +259,7 @@ namespace Solace.Core
             o.Add("motherId", MotherId);
             o.Add("fatherId", FatherId);
             o.Add("lightShade", LightShade);
+            o.Add("traits", Traits.ToJson());
             o.Add("forage", Forage); o.Add("notice", Notice); o.Add("hide", Hide);
             o.Add("followingParent", FollowingParent);
             o.Add("isAlive", IsAlive);
@@ -281,6 +283,9 @@ namespace Solace.Core
             k.MotherId = JsonHelpers.GetInt(o, "motherId", -1);
             k.FatherId = JsonHelpers.GetInt(o, "fatherId", -1);
             k.LightShade = JsonHelpers.GetFloat(o, "lightShade", 0.5f);
+            JsonValue tkv;
+            k.Traits = o.TryGet("traits", out tkv) && !tkv.IsNull
+                ? Personality.FromJson(tkv.AsObject()) : Personality.Neutral();
             k.Forage = JsonHelpers.GetFloat(o, "forage", 0f);
             k.Notice = JsonHelpers.GetFloat(o, "notice", 0f);
             k.Hide = JsonHelpers.GetFloat(o, "hide", 0f);
@@ -338,6 +343,21 @@ namespace Solace.Core
 
             float pd = parent.IsAlive ? V2.Distance(kit.Pos, parent.Pos) : float.MaxValue;
 
+            // Storms are terrifying: hide at the den, same as for predators.
+            if (s.Weather == Weather.Storm)
+            {
+                kit.State = "Hide";
+                var stormDen = FindDen(s);
+                if (stormDen != null)
+                {
+                    MoveToward(sim, kit, stormDen.X, stormDen.Z, 3.4f, dt, 3f);
+                    kit.Hide = MathX.Clamp01(kit.Hide + dt * 0.003f);
+                }
+                // Huddled and scared: mood dips until the sky calms.
+                kit.Mood = MathX.Clamp(kit.Mood - dt * 0.3f, 0f, 100f);
+                return;
+            }
+
             // Danger first: hide at the den when a gloom-maw is near.
             if (NearestPredatorDist(sim, kit.Pos, 22f) < 22f)
             {
@@ -392,14 +412,21 @@ namespace Solace.Core
 
             kit.State = "Play";
             kit.Energy = MathX.Clamp(kit.Energy - dt * 0.06f, 0f, 100f);
-            kit.Mood = MathX.Clamp(kit.Mood + dt * 0.1f, 0f, 100f);
+            // Light rain is the best playground: kits play harder and happier.
+            bool rainPlay = s.Weather == Weather.Rain;
+            kit.Mood = MathX.Clamp(kit.Mood + dt * (rainPlay ? 0.25f : 0.1f), 0f, 100f);
+            if (rainPlay)
+                kit.Energy = MathX.Clamp(kit.Energy - dt * 0.03f, 0f, 100f); // extra romping
             // Hop about near the parent (or hold near the den if the parent is gone).
             float ax = parent.IsAlive ? parent.X : kit.X;
             float az = parent.IsAlive ? parent.Z : kit.Z;
-            if (V2.Distance(kit.Pos, new V2(ax, az)) > 14f || sim.EventRng.NextFloat() < dt * 0.08f)
+            // Rain makes them bolder: wider romps, more often.
+            float hopChance = rainPlay ? dt * 0.16f : dt * 0.08f;
+            float hopR = rainPlay ? 12f : 9f;
+            if (V2.Distance(kit.Pos, new V2(ax, az)) > 14f || sim.EventRng.NextFloat() < hopChance)
             {
                 float ang = sim.EventRng.NextFloat(0f, MathF.PI * 2f);
-                float r = sim.EventRng.NextFloat(3f, 9f);
+                float r = sim.EventRng.NextFloat(3f, hopR);
                 MoveToward(sim, kit, ax + (float)Math.Cos(ang) * r, az + (float)Math.Sin(ang) * r, 2.6f, dt, 1f);
             }
         }
@@ -670,11 +697,20 @@ namespace Solace.Core
 
             bond.LitterBorn = true;
             int n = 1 + sim.LineageRng.NextInt(3);
+            int kitsBefore = s.Kits.Count;
             BirthLitter(sim, n, partner.Id);
 
+            // Name the kits, epithets and all — this is how the vale learns them.
+            var kitNames = new List<string>();
+            for (int i = kitsBefore; i < s.Kits.Count; i++)
+                kitNames.Add(NamedWithEpithet(s.Kits[i].Name, s.Kits[i].Traits));
+            string kitList = kitNames[0];
+            for (int i = 1; i < kitNames.Count; i++)
+                kitList += (i == kitNames.Count - 1 ? " and " : ", ") + kitNames[i];
             string countWord = n == 1 ? "One kit" : n == 2 ? "Two kits" : "Three kits";
             sim.Journal(sim.Now,
-                countWord + " tumbled out of the den at dawn, all glow and noise. " +
+                countWord + " tumbled out of the den at dawn — " + kitList +
+                ", all glow and noise. " +
                 partner.Name + " and I are parents. The vale feels wider than the sky.",
                 JournalCategory.Social, 0.95f);
             MaybeDistillTale(sim, "The Litter at " + DenName(s), "Compassion", 0.06f,
@@ -695,6 +731,13 @@ namespace Solace.Core
             return "the den";
         }
 
+        /// <summary>"Ash the Bold", or just "Ash" when no trait stands out.</summary>
+        private static string NamedWithEpithet(string name, Personality traits)
+        {
+            string e = traits != null ? traits.Epithet() : "";
+            return string.IsNullOrEmpty(e) ? name : name + " " + e;
+        }
+
         /// <summary>Births n kits at the den. Journaled by the caller.</summary>
         public static void BirthLitter(Simulation sim, int n, int motherEntityId)
         {
@@ -703,6 +746,9 @@ namespace Solace.Core
             var den = FindDen(s);
             float dx = den != null ? den.X : a.X;
             float dz = den != null ? den.Z : a.Z;
+            // The mother's temperament: kindred carry no traits, so draw one
+            // maternal personality per litter and blend it with the father's.
+            var maternal = Personality.Generate(sim.LineageRng);
             for (int i = 0; i < n; i++)
             {
                 var kit = new KitState
@@ -716,6 +762,7 @@ namespace Solace.Core
                     MotherId = motherEntityId,
                     FatherId = a.Id,
                     LightShade = MathX.Clamp01(a.LightShade + sim.LineageRng.NextFloat(-0.06f, 0.06f)),
+                    Traits = Personality.Inherit(a.Traits, maternal, sim.LineageRng),
                     FollowingParent = true,
                     IsAlive = true
                 };
@@ -783,13 +830,13 @@ namespace Solace.Core
                 : kind == "sickness"
                 ? "Chapter " + gen + " ends: " + old.Name + " dimmed of the " + SicknessName(old.Sickness) + ", though he fought it to the last."
                 : "Chapter " + gen + " ends: " + old.Name + " — " + cause + " The tales do not end here.";
-            s.Journal.Add(s.ElapsedSeconds, closeLine, JournalCategory.Chapter, 1.0f, 1f,
+            s.Journal.Add((float)s.ElapsedSeconds, closeLine, JournalCategory.Chapter, 1.0f, 1f,
                 null, null, "self", gen);
             s.Lineage.Chapters.Add(new ChapterRecord
             {
                 Generation = gen,
                 StartTime = s.Lineage.ChapterStartTime,
-                EndTime = s.ElapsedSeconds,
+                EndTime = (float)s.ElapsedSeconds,
                 Cause = kind == "old" ? "old age" : kind == "predator" ? "gloom-maw" : kind == "sickness" ? SicknessName(old.Sickness) : cause
             });
 
@@ -807,7 +854,9 @@ namespace Solace.Core
             {
                 s.Kits.Remove(eldest);
                 heir = HeirFromKit(s, eldest, rng);
+                string ep = heir.Traits.Epithet();
                 openLine = "Chapter " + (gen + 1) + " begins: " + heir.Name +
+                           (string.IsNullOrEmpty(ep) ? "" : " " + ep) +
                            " takes up the tales, her light the color of " + ShadeWord(heir.LightShade) + ".";
             }
             else
@@ -835,10 +884,10 @@ namespace Solace.Core
             s.Agent = heir;
             s.Lineage.Generation = gen + 1;
             s.Lineage.ProtagonistId = heir.Id;
-            s.Lineage.ChapterStartTime = s.ElapsedSeconds;
+            s.Lineage.ChapterStartTime = (float)s.ElapsedSeconds;
 
             // 4. Open the chapter.
-            s.Journal.Add(s.ElapsedSeconds, openLine, JournalCategory.Chapter, 1.0f, 1f,
+            s.Journal.Add((float)s.ElapsedSeconds, openLine, JournalCategory.Chapter, 1.0f, 1f,
                 null, null, "self", s.Lineage.Generation);
 
             // Prune dead kin records.
@@ -871,7 +920,10 @@ namespace Solace.Core
             heir.LightShade = kit.LightShade;
             heir.MotherId = kit.MotherId;
             heir.FatherId = kit.FatherId;
-            heir.Traits = new Personality();
+            // Temperament carries over: the kit's inherited traits are the base,
+            // shaped by what she learned at the parent's heels — continuation,
+            // not a clone.
+            heir.Traits = kit.Traits != null ? kit.Traits.Clone() : Personality.Neutral();
             // What the kit learned following the parent shapes temperament.
             heir.Traits.Nudge("Caution", kit.Hide * 0.2f - 0.1f + (float)rng.NextGaussian() * 0.05f);
             heir.Traits.Nudge("Curiosity", kit.Notice * 0.2f - 0.1f + (float)rng.NextGaussian() * 0.05f);

@@ -35,7 +35,7 @@ namespace Solace.Unity.Verification
         private int _phase;
         private string _shotDir;
         private int _journal0;
-        private float _elapsed0;
+        private double _elapsed0;
         private readonly HashSet<string> _goals = new HashSet<string>();
         private int _errors;
         private bool _done;
@@ -57,7 +57,7 @@ namespace Solace.Unity.Verification
             _boot.StartNewLife(_seed);
 
             string exeDir = Directory.GetParent(Application.dataPath).FullName;
-            _shotDir = Path.Combine(exeDir, "verification", "shots");
+            _shotDir = Path.Combine(Path.Combine(exeDir, "verification"), "shots");
             Directory.CreateDirectory(_shotDir);
 
             _journal0 = _boot.Sim.State.Journal.Count;
@@ -161,7 +161,7 @@ namespace Solace.Unity.Verification
             _done = true;
             var fails = new List<string>();
             if (_errors > 0) fails.Add(_errors + " errors logged");
-            float advanced = _boot.Sim.State.ElapsedSeconds - _elapsed0;
+            double advanced = _boot.Sim.State.ElapsedSeconds - _elapsed0;
             if (advanced < 30f) fails.Add("sim time advanced only " + advanced.ToString("F1") + "s");
             int grown = _boot.Sim.State.Journal.Count - _journal0;
             if (grown <= 0) fails.Add("journal did not grow");

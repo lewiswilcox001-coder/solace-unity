@@ -42,6 +42,10 @@ namespace Solace.Unity
                     case PoiType.RuinSite: BuildRuinSite(root, poi); break;
                     case PoiType.Overlook: BuildOverlook(root, poi); break;
                     case PoiType.GlowberryBush: BuildHeroBush(root, poi); break;
+                    case PoiType.CrystalCave: BuildCrystalCave(root, poi); break;
+                    case PoiType.HotSpring: BuildHotSpring(root, poi); break;
+                    case PoiType.HollowLog: BuildHollowLog(root, poi); break;
+                    case PoiType.RainbowGrove: BuildRainbowGrove(root, poi); break;
                 }
             }
         }
@@ -278,6 +282,213 @@ namespace Solace.Unity
                 MeshFactory.AddMesh(root, "Berry" + i, sphere, berryMat,
                     new Vector3(Mathf.Cos(a) * r, 1.0f + e, Mathf.Sin(a) * r),
                     Vector3.one * 0.28f, Quaternion.identity);
+            }
+        }
+
+        // -- crystal cave ------------------------------------------------------------
+
+        private void BuildCrystalCave(GameObject root, PointOfInterest poi)
+        {
+            // Living glass: faceted shards rising from a stone mouth, glowing
+            // faint blue-violet. The emissive reads as night-glow when the sun dies.
+            var stone = MaterialFactory.Lit(Stone, 0.4f);
+            var crystalA = MaterialFactory.LitEmissive(new Color(0.35f, 0.55f, 0.75f),
+                                                        new Color(0.25f, 0.55f, 0.95f) * 0.9f, 0.15f);
+            var crystalB = MaterialFactory.LitEmissive(new Color(0.55f, 0.40f, 0.70f),
+                                                        new Color(0.55f, 0.35f, 0.90f) * 0.8f, 0.15f);
+            var rockMesh = MeshFactory.FacetedRock();
+            var rng = SeededRandom.Derive(poi.Id * 7919 + 397, "unity-crystal");
+
+            // Low stone lip around the mouth.
+            int n = 10;
+            for (int i = 0; i < n; i++)
+            {
+                float a = (i / (float)n) * Mathf.PI * 2f;
+                float r = 4.2f;
+                // Leave a gap at the front for entry.
+                if (Mathf.Abs(Mathf.DeltaAngle(a * Mathf.Rad2Deg, 90f)) < 28f) continue;
+                MeshFactory.AddMesh(root, "Lip" + i, rockMesh, stone,
+                    new Vector3(Mathf.Cos(a) * r, 0.3f, Mathf.Sin(a) * r),
+                    new Vector3(rng.NextFloat(0.8f, 1.4f), rng.NextFloat(0.5f, 0.9f), rng.NextFloat(0.8f, 1.4f)),
+                    Quaternion.Euler(0f, rng.NextFloat(0f, 360f), 0f));
+            }
+            // Crystal shards: stretched octahedrons, clustered, leaning outward.
+            int shards = 14;
+            for (int i = 0; i < shards; i++)
+            {
+                float a = rng.NextFloat(0f, Mathf.PI * 2f);
+                float r = rng.NextFloat(0.5f, 3.6f);
+                float hgt = rng.NextFloat(1.2f, 4.2f);
+                var mat = rng.NextFloat() < 0.6f ? crystalA : crystalB;
+                float lean = rng.NextFloat(-14f, 14f);
+                MeshFactory.AddMesh(root, "Shard" + i, rockMesh, mat,
+                    new Vector3(Mathf.Cos(a) * r, hgt * 0.32f, Mathf.Sin(a) * r),
+                    new Vector3(rng.NextFloat(0.35f, 0.7f), hgt * 0.55f, rng.NextFloat(0.35f, 0.7f)),
+                    Quaternion.Euler(lean, rng.NextFloat(0f, 360f), rng.NextFloat(-10f, 10f)));
+            }
+            // A few small ground crystals scattered around the mouth.
+            for (int i = 0; i < 8; i++)
+            {
+                float a = rng.NextFloat(0f, Mathf.PI * 2f);
+                float r = rng.NextFloat(4.5f, 8f);
+                var mat = rng.NextFloat() < 0.5f ? crystalA : crystalB;
+                MeshFactory.AddMesh(root, "Peb" + i, MeshFactory.Cone(0.28f, rng.NextFloat(0.5f, 1.1f), 6), mat,
+                    new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r),
+                    Vector3.one, Quaternion.Euler(rng.NextFloat(-8f, 8f), rng.NextFloat(0f, 360f), 0f));
+            }
+        }
+
+        // -- hot spring --------------------------------------------------------------
+
+        private void BuildHotSpring(GameObject root, PointOfInterest poi)
+        {
+            var stone = MaterialFactory.Lit(Stone, 0.35f);
+            var water = MaterialFactory.LitEmissive(new Color(0.15f, 0.45f, 0.50f),
+                                                     new Color(0.10f, 0.35f, 0.38f) * 0.6f, 0.25f);
+            var rockMesh = MeshFactory.FacetedRock();
+            var rng = SeededRandom.Derive(poi.Id * 7919 + 463, "unity-spring");
+
+            // Ring of smooth stones.
+            int n = 11;
+            for (int i = 0; i < n; i++)
+            {
+                float a = (i / (float)n) * Mathf.PI * 2f;
+                float r = 3.1f;
+                MeshFactory.AddMesh(root, "Rim" + i, rockMesh, stone,
+                    new Vector3(Mathf.Cos(a) * r, 0.25f, Mathf.Sin(a) * r),
+                    new Vector3(rng.NextFloat(0.7f, 1.2f), rng.NextFloat(0.4f, 0.7f), rng.NextFloat(0.7f, 1.2f)),
+                    Quaternion.Euler(0f, rng.NextFloat(0f, 360f), 0f));
+            }
+            // The pool itself: warm, faintly glowing water.
+            MeshFactory.AddMesh(root, "Pool", MeshFactory.Disc(2.9f, 16), water,
+                new Vector3(0f, 0.18f, 0f), Vector3.one, Quaternion.identity);
+            // Steam: soft white motes rising.
+            var go = new GameObject("Steam");
+            go.transform.SetParent(root.transform, false);
+            go.transform.localPosition = new Vector3(0f, 0.5f, 0f);
+            var ps = go.AddComponent<ParticleSystem>();
+            var main = ps.main;
+            main.loop = true;
+            main.startLifetime = new ParticleSystem.MinMaxCurve(2.0f, 3.5f);
+            main.startSpeed = new ParticleSystem.MinMaxCurve(0.5f, 1.2f);
+            main.startSize = new ParticleSystem.MinMaxCurve(0.4f, 0.9f);
+            main.startColor = new ParticleSystem.MinMaxGradient(new Color(0.92f, 0.95f, 0.96f));
+            main.gravityModifier = -0.1f;
+            main.maxParticles = 40;
+            main.simulationSpace = ParticleSystemSimulationSpace.World;
+            var em = ps.emission;
+            em.rateOverTime = new ParticleSystem.MinMaxCurve(8f);
+            var sh = ps.shape;
+            sh.shapeType = ParticleSystemShapeType.Sphere;
+            sh.radius = 2.0f;
+            var psr = go.GetComponent<ParticleSystemRenderer>();
+            psr.renderMode = ParticleSystemRenderMode.Mesh;
+            psr.mesh = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
+            psr.material = MaterialFactory.Lit(new Color(0.90f, 0.93f, 0.94f), 0.9f);
+        }
+
+        // -- hollow log ---------------------------------------------------------------
+
+        private void BuildHollowLog(GameObject root, PointOfInterest poi)
+        {
+            var bark = MaterialFactory.Lit(new Color(0.28f, 0.18f, 0.10f), 0.5f);
+            var dark = MaterialFactory.Lit(new Color(0.02f, 0.015f, 0.015f), 0.1f);
+            var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.5f, 0.7f);
+            var rng = SeededRandom.Derive(poi.Id * 7919 + 529, "unity-log");
+
+            // The fallen trunk: a long cylinder lying on its side.
+            float yaw = rng.NextFloat(0f, 360f);
+            var logGO = new GameObject("Trunk");
+            logGO.transform.SetParent(root.transform, false);
+            logGO.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
+            MeshFactory.AddMesh(logGO, "Trunk", MeshFactory.GetPrimitive(PrimitiveType.Cylinder), bark,
+                new Vector3(0f, 0.9f, 0f), new Vector3(1.8f, 7f, 1.8f),
+                Quaternion.Euler(0f, 0f, 90f));
+            // Dark hollow mouth at one end.
+            var mouthDir = Quaternion.Euler(0f, yaw, 0f) * Vector3.right;
+            MeshFactory.AddMesh(root, "Mouth", MeshFactory.GetPrimitive(PrimitiveType.Sphere), dark,
+                mouthDir * 3.4f + new Vector3(0f, 0.85f, 0f),
+                new Vector3(1.1f, 1.1f, 0.6f), Quaternion.identity);
+            // Moss patches on top.
+            for (int i = 0; i < 5; i++)
+            {
+                float t = rng.NextFloat(-2.6f, 2.6f);
+                var off = Quaternion.Euler(0f, yaw, 0f) * new Vector3(t, 1.75f, rng.NextFloat(-0.5f, 0.5f));
+                MeshFactory.AddMesh(root, "Moss" + i, MeshFactory.Disc(0.7f, 7), moss,
+                    off, Vector3.one * rng.NextFloat(0.7f, 1.3f), Quaternion.identity);
+            }
+            // Broken branch stubs.
+            for (int i = 0; i < 3; i++)
+            {
+                float t = rng.NextFloat(-2f, 2f);
+                var off = Quaternion.Euler(0f, yaw, 0f) * new Vector3(t, 1.4f, 0f);
+                MeshFactory.AddMesh(root, "Stub" + i, MeshFactory.Cone(0.22f, rng.NextFloat(0.8f, 1.6f), 5), bark,
+                    off, Vector3.one,
+                    Quaternion.Euler(rng.NextFloat(20f, 50f), rng.NextFloat(0f, 360f), 0f));
+            }
+        }
+
+        private void BuildRainbowGrove(GameObject root, PointOfInterest poi)
+        {
+            // SECRET: the hidden rainbow grove. A circle of tall crystals, each
+            // a different color of the rainbow, humming with light. This should
+            // stop Lewis in his tracks when he finds it.
+            var rng = SeededRandom.Derive(poi.Id * 7919 + 977, "unity-rainbow");
+            var rockMesh = MeshFactory.FacetedRock();
+            // Mossy stone ring at the base.
+            var mossStone = MaterialFactory.Lit(new Color(0.25f, 0.35f, 0.22f), 0.5f);
+            for (int i = 0; i < 12; i++)
+            {
+                float a = (i / 12f) * Mathf.PI * 2f;
+                float r = 7.5f;
+                MeshFactory.AddMesh(root, "Ring" + i, rockMesh, mossStone,
+                    new Vector3(Mathf.Cos(a) * r, 0.25f, Mathf.Sin(a) * r),
+                    new Vector3(rng.NextFloat(0.9f, 1.5f), rng.NextFloat(0.4f, 0.7f), rng.NextFloat(0.9f, 1.5f)),
+                    Quaternion.Euler(0f, rng.NextFloat(0f, 360f), 0f));
+            }
+            // The rainbow: seven tall crystals, one per color, in spectral order.
+            Color[] spectral = new Color[]
+            {
+                new Color(0.95f, 0.25f, 0.25f), // red
+                new Color(0.95f, 0.55f, 0.20f), // orange
+                new Color(0.95f, 0.85f, 0.25f), // yellow
+                new Color(0.35f, 0.85f, 0.35f), // green
+                new Color(0.30f, 0.60f, 0.95f), // blue
+                new Color(0.45f, 0.35f, 0.85f), // indigo
+                new Color(0.75f, 0.40f, 0.90f), // violet
+            };
+            for (int i = 0; i < 7; i++)
+            {
+                float a = (i / 7f) * Mathf.PI * 2f + 0.22f;
+                float r = 4.2f;
+                Color c = spectral[i];
+                var mat = MaterialFactory.LitEmissive(c * 0.75f, c * 1.4f, 0.12f);
+                float hgt = rng.NextFloat(3.5f, 6.5f);
+                float lean = rng.NextFloat(-10f, 10f);
+                MeshFactory.AddMesh(root, "Prism" + i, rockMesh, mat,
+                    new Vector3(Mathf.Cos(a) * r, hgt * 0.38f, Mathf.Sin(a) * r),
+                    new Vector3(rng.NextFloat(0.55f, 0.85f), hgt * 0.62f, rng.NextFloat(0.55f, 0.85f)),
+                    Quaternion.Euler(lean, rng.NextFloat(0f, 360f), rng.NextFloat(-8f, 8f)));
+            }
+            // Center crystal: the heart — white-gold, tallest, the source.
+            var heartMat = MaterialFactory.LitEmissive(
+                new Color(1f, 0.97f, 0.88f), new Color(1f, 0.92f, 0.75f) * 1.8f, 0.1f);
+            MeshFactory.AddMesh(root, "Heart", rockMesh, heartMat,
+                new Vector3(0f, 3.2f, 0f),
+                new Vector3(1.1f, 8.5f, 1.1f),
+                Quaternion.Euler(4f, 30f, -3f));
+            // Scattered small rainbow shards on the moss.
+            for (int i = 0; i < 16; i++)
+            {
+                float a = rng.NextFloat(0f, Mathf.PI * 2f);
+                float r = rng.NextFloat(1.5f, 9f);
+                Color c = spectral[rng.NextInt(0, 7)];
+                var mat = MaterialFactory.LitEmissive(c * 0.7f, c * 1.1f, 0.15f);
+                float hgt = rng.NextFloat(0.4f, 1.4f);
+                MeshFactory.AddMesh(root, "Shard" + i, rockMesh, mat,
+                    new Vector3(Mathf.Cos(a) * r, hgt * 0.3f, Mathf.Sin(a) * r),
+                    new Vector3(rng.NextFloat(0.2f, 0.4f), hgt * 0.6f, rng.NextFloat(0.2f, 0.4f)),
+                    Quaternion.Euler(rng.NextFloat(-15f, 15f), rng.NextFloat(0f, 360f), 0f));
             }
         }
     }

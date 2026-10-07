@@ -26,6 +26,7 @@ namespace Solace.Unity
         private const float BandMidMax = 24f;
 
         private Material _waterMat;
+        private MeshRenderer _terrainRenderer; // stored so seasons can re-tint the palette
         private static readonly Color WaterDay = new Color(0.10f, 0.28f, 0.34f);
         private static readonly Color WaterGlow = new Color(0.14f, 0.72f, 0.66f);
 
@@ -142,6 +143,7 @@ namespace Solace.Unity
             var renderer = go.AddComponent<MeshRenderer>();
             renderer.sharedMaterials = materials;
             renderer.receiveShadows = true;
+            _terrainRenderer = renderer; // seasons re-tint via ApplySeasonTint
         }
 
         private void BuildWater(WorldData world)
@@ -220,6 +222,28 @@ namespace Solace.Unity
             {
                 MaterialFactory.SetEmission(_waterMat, Color.black);
             }
+        }
+
+        /// <summary>
+        /// Re-hues the whole terrain for a season. Swaps the 36 bucket
+        /// materials for season-tinted versions (cached in MaterialFactory,
+        /// so repeated turns are cheap) and re-tints the owned water material.
+        /// Called by SeasonView on season change.
+        /// </summary>
+        public void ApplySeasonTint(Season season)
+        {
+            if (_terrainRenderer != null)
+            {
+                var mats = new Material[36];
+                for (int i = 0; i < 36; i++)
+                {
+                    Color base_ = BiomeRamps[i / 2] * (i % 2 == 0 ? 1f : 0.92f);
+                    mats[i] = MaterialFactory.Lit(SeasonPalette.TintTerrain(base_, season), 0.12f);
+                }
+                _terrainRenderer.sharedMaterials = mats;
+            }
+            if (_waterMat != null)
+                _waterMat.color = SeasonPalette.TintWater(season);
         }
 
         private static float Fract(float x) { return x - Mathf.Floor(x); }

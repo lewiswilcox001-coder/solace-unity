@@ -197,12 +197,97 @@ namespace Solace.Core
 
         // -- deer ---------------------------------------------------------------
 
+        /// <summary>Herd snapshot for one animal: same-kind neighbors within radius.</summary>
+        private struct HerdInfo
+        {
+            public int Count;            // herd-mates found (excluding self)
+            public float CenterX, CenterZ;
+            public float AlignX, AlignZ;  // summed headings of moving herd-mates
+            public int MovingCount;
+            public bool AnyFleeing;
+            public float FleeDirX, FleeDirZ; // summed headings of fleeing herd-mates
+        }
+
+        /// <summary>Scans for same-kind herd-mates within radius. Deterministic: list order.</summary>
+        private static HerdInfo ScanHerd(EntityState e, EntityContext ctx, float radius)
+        {
+            var h = new HerdInfo();
+            float r2 = radius * radius;
+            for (int i = 0; i < ctx.Entities.Count; i++)
+            {
+                var o = ctx.Entities[i];
+                if (o == e || !o.IsAlive) continue;
+                if (o.Kind != e.Kind) continue;
+                float dx = o.X - e.X, dz = o.Z - e.Z;
+                if (dx * dx + dz * dz > r2) continue;
+                h.Count++;
+                h.CenterX += o.X; h.CenterZ += o.Z;
+                // Facing is atan2(dx,dz), so heading vector = (sin, cos).
+                float hx = MathF.Sin(o.Facing), hz = MathF.Cos(o.Facing);
+                if (o.Behavior == "Wander" || o.Behavior == "Roam" || o.Behavior == "Hop")
+                {
+                    h.AlignX += hx; h.AlignZ += hz;
+                    h.MovingCount++;
+                }
+                if (o.Behavior == "Flee")
+                {
+                    h.AnyFleeing = true;
+                    h.FleeDirX += hx; h.FleeDirZ += hz;
+                }
+            }
+            if (h.Count > 0) { h.CenterX /= h.Count; h.CenterZ /= h.Count; }
+            return h;
+        }
+
         private static void StepDeer(EntityState e, EntityContext ctx, float dt)
         {
+            // Herd awareness: same-kind neighbors within 20 units.
+            var herd = ScanHerd(e, ctx, 20f);
+
+            // Contagious flight: a fleeing herd-mate spooks the herd. The
+            // probabilistic gate gives a natural 1-2s reaction delay.
+            if (e.Behavior != "Flee" && herd.AnyFleeing)
+            {
+                if (ctx.Rng.NextFloat() < dt * 0.7f)
+                {
+                    e.Behavior = "Flee";
+                    e.StateTimer = 5f;
+                }
+            }
+
             if (e.Behavior == "Flee")
             {
-                V2 fleeFrom = ThreatPos(e, ctx);
-                FleeFrom(e, ctx, dt, 6f, fleeFrom.X, fleeFrom.Z);
+                // Group flight: move AWAY from the predator as a herd, not as
+                // scattered individuals. Blend personal escape vector with the
+                // herd's flee heading so the group stays coherent.
+                var t = NearestThreat(e, ctx, 30f);
+                float dx, dz;
+                if (t.Found)
+                {
+                    V2 tp = (t.IsAgent || t.Entity == null) ? ctx.Agent.Pos : t.Entity.Pos;
+                    dx = e.X - tp.X; dz = e.Z - tp.Z;
+                    if (herd.AnyFleeing)
+                    {
+                        float fl = MathF.Sqrt(herd.FleeDirX * herd.FleeDirX +
+                                              herd.FleeDirZ * herd.FleeDirZ);
+                        if (fl > 0.01f)
+                        {
+                            dx = dx * 0.4f + (herd.FleeDirX / fl) * 0.6f;
+                            dz = dz * 0.4f + (herd.FleeDirZ / fl) * 0.6f;
+                        }
+                    }
+                }
+                else if (herd.AnyFleeing)
+                {
+                    // Spooked by the herd, threat out of sight: follow the leader.
+                    dx = herd.FleeDirX; dz = herd.FleeDirZ;
+                }
+                else
+                {
+                    if (e.StateTimer <= 0f) { e.Behavior = "Graze"; e.StateTimer = 3f; }
+                    return;
+                }
+                Move(e, ctx, dx, dz, 6f, dt);
                 if (e.StateTimer <= 0f) { e.Behavior = "Graze"; e.StateTimer = 3f; }
                 return;
             }
@@ -213,8 +298,69 @@ namespace Solace.Core
                 e.StateTimer = 5f;
                 return;
             }
-            if (e.Behavior != "Graze") e.Behavior = "Wander";
-            Wander(e, ctx, dt, 1.6f, 40f);
+            // Grazing clusters: idle deer drift toward the herd center instead
+            // of standing scattered.
+            if (e.Behavior == "Graze")
+            {
+                if (e.StateTimer <= 0f)
+                {
+                    e.Behavior = "Wander";
+                }
+                else
+                {
+                    if (herd.Count > 0)
+                    {
+                        float hx = herd.CenterX - e.X, hz = herd.CenterZ - e.Z;
+                        if (hx * hx + hz * hz > 49f) // >7u from center: drift closer
+                            Move(e, ctx, hx, hz, 0.7f, dt);
+                    }
+                    return; // keep grazing
+                }
+            }
+            if (e.Behavior != "Wander") e.Behavior = "Wander";
+            WanderHerd(e, ctx, dt, herd, 1.6f, 40f);
+        }
+
+        /// <summary>Wander with boids-style cohesion + alignment for herd animals.</summary>
+        private static void WanderHerd(EntityState e, EntityContext ctx, float dt,
+                                       HerdInfo herd, float speed, float range)
+        {
+            float dx = e.TargetX - e.X, dz = e.TargetZ - e.Z;
+            if (dx * dx + dz * dz < 4f || e.StateTimer <= 0f)
+            {
+                float ang = ctx.Rng.NextFloat(0f, MathF.PI * 2f);
+                float dist = ctx.Rng.NextFloat(6f, range);
+                float tx = e.HomeX + MathF.Cos(ang) * dist;
+                float tz = e.HomeZ + MathF.Sin(ang) * dist;
+                // Cohesion: bias the wander target toward the herd center so
+                // the group drifts together instead of scattering.
+                if (herd.Count > 0)
+                {
+                    tx = tx * 0.35f + herd.CenterX * 0.65f;
+                    tz = tz * 0.35f + herd.CenterZ * 0.65f;
+                }
+                e.TargetX = tx; e.TargetZ = tz;
+                e.StateTimer = ctx.Rng.NextFloat(4f, 10f);
+                // Occasionally just stand and rest.
+                if (ctx.Rng.NextFloat() < 0.35f)
+                {
+                    e.Behavior = "Graze";
+                    e.StateTimer = ctx.Rng.NextFloat(3f, 7f);
+                    return;
+                }
+            }
+            // Alignment: blend travel direction with the herd's average heading.
+            float mx = dx, mz = dz;
+            if (herd.MovingCount > 0)
+            {
+                float al = MathF.Sqrt(herd.AlignX * herd.AlignX + herd.AlignZ * herd.AlignZ);
+                if (al > 0.3f)
+                {
+                    mx = dx * 0.6f + (herd.AlignX / al) * 0.4f;
+                    mz = dz * 0.6f + (herd.AlignZ / al) * 0.4f;
+                }
+            }
+            Move(e, ctx, mx, mz, speed, dt);
         }
 
         private static V2 ThreatPos(EntityState e, EntityContext ctx)

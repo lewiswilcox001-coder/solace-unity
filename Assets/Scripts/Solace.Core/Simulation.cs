@@ -32,6 +32,15 @@ namespace Solace.Core
         private int _nextEntityId = 1;
         private float _lastCheckpointAt = -9999f;
         private float _prevHealth = 100f;
+        // Season memory (per-simulation, not saved — derived from ElapsedSeconds on load).
+        private Season _lastSeason = Season.Spring;
+        private long _lastSeasonHourMark = 0;
+        private readonly HashSet<int> _springBlessed = new HashSet<int>();
+        /// <summary>
+        /// Storm sense: the fox smelled a storm coming. Game-time until which the
+        /// sense lingers (transient; a few game-hours). EatAction reads this.
+        /// </summary>
+        public float StormSensedUntil = -1f;
 
         private static readonly string[] KindredNames =
             { "Vesper", "Tallow", "Ember", "Moth", "Sable", "Lumen", "Ash", "Wick" };
@@ -57,11 +66,15 @@ namespace Solace.Core
                 var act = Brain.GetAction(state.Agent.CurrentGoal);
                 if (act != null) Brain.CurrentActionName = act.Name;
             }
+            // Season memory: start from the current season so a loaded life
+            // doesn't re-journal the season it's already in.
+            _lastSeason = SeasonSystem.Current(state);
+            _lastSeasonHourMark = (long)Math.Floor(state.ElapsedSeconds / 3600.0);
         }
 
         public int NextEntityId() { return _nextEntityId++; }
 
-        public float Now { get { return State.ElapsedSeconds; } }
+        public float Now { get { return (float)State.ElapsedSeconds; } }
 
         // -- life factory ----------------------------------------------------------
 
@@ -238,6 +251,7 @@ namespace Solace.Core
             State.ElapsedSeconds += h;
 
             WeatherDrift();
+            SeasonSystem.Tick(this, ref _lastSeason, ref _lastSeasonHourMark, _springBlessed);
             LineageSystem.TickAging(this, h);
             LineageSystem.TickSickness(this, h);
             LineageSystem.TickBonding(this);
@@ -246,14 +260,18 @@ namespace Solace.Core
                 Journal(t, text, cat, sal));
             Brain.Tick(this, h);
             DreamSystem.TickSleep(this);
+            FoxVoice.Tick(this, h);
             StepEntities(h);
             DiscoveryCheck();
             InjuryHook();
-            State.Social.Decay(State.ElapsedSeconds, h); // stateless per-step: no chunk timer to persist
+            State.Social.Decay((float)State.ElapsedSeconds, h); // stateless per-step: no chunk timer to persist
+            EasterEggSystem.Tick(this, h); // secrets and gifts: detection + journal only
+            MilestoneSystem.Tick(this); // detection only: unlocks celebrations, never changes logic
+            StatSystem.Tick(this); // tracking only: lifetime statistics, never changes logic
 
             if (State.ElapsedSeconds - _lastCheckpointAt > 300f)
             {
-                _lastCheckpointAt = State.ElapsedSeconds;
+                _lastCheckpointAt = (float)State.ElapsedSeconds;
                 SyncRng();
                 LastCheckpointJson = SaveSystem.Save(State);
             }
@@ -273,7 +291,7 @@ namespace Solace.Core
         private void WeatherDrift()
         {
             if (State.ElapsedSeconds - State.WeatherChangedAt < 2700f) return; // ~45 game-min
-            State.WeatherChangedAt = State.ElapsedSeconds;
+            State.WeatherChangedAt = (float)State.ElapsedSeconds;
             Weather next = SaveSystem.RollWeather(State.Weather, EventRng);
             if (next == State.Weather) return;
             State.Weather = next;
@@ -281,12 +299,30 @@ namespace Solace.Core
             {
                 case Weather.Rain:
                     Journal(Now, "Rain begins to fall over the vale.", JournalCategory.Weather, 0.3f);
+                    // The sensed storm arrived as rain instead: close enough.
+                    StormSensedUntil = -1f;
                     break;
                 case Weather.Storm:
                     Journal(Now, "A storm is coming down off the tops. I should think about shelter.", JournalCategory.Weather, 0.5f);
+                    StormSensedUntil = -1f;
+                    break;
+                case Weather.Cloudy:
+                    // Storm sense: the fox smells weather on the wind. Sometimes right,
+                    // sometimes wrong — instinct, not forecast. (Deterministic via EventRng.)
+                    if (EventRng.NextFloat() < 0.35f)
+                    {
+                        StormSensedUntil = Now + 5400f; // ~1.5 game-hours of foreboding
+                        FoxVoice.OnStormSense(this);
+                    }
                     break;
                 case Weather.Clear:
-                    if (EventRng.NextFloat() < 0.4f)
+                    if (StormSensedUntil > 0f)
+                    {
+                        // False alarm: the wind lied.
+                        StormSensedUntil = -1f;
+                        FoxVoice.OnFalseAlarm(this);
+                    }
+                    else if (EventRng.NextFloat() < 0.4f)
                         Journal(Now, "The cloud broke and the vale filled with light.", JournalCategory.Weather, 0.25f);
                     break;
             }
@@ -379,8 +415,33 @@ namespace Solace.Core
                     line = "I found " + poi.DisplayName + ". Old husks of a story, older than stories.";
                     salience = 0.75f; break;
                 case PoiType.Overlook:
-                    line = "I climbed until the whole vale lay below me — river, loch, den, and all.";
-                    salience = 0.6f; break;
+                    line = "I climbed until the whole vale lay below me — river, loch, den, and all. " +
+                           "The wind up there tasted like distance. I sat a long while.";
+                    salience = 0.65f; break;
+                case PoiType.CrystalCave:
+                    line = "I found " + poi.DisplayName + " — a throat in the rock lined with living glass. " +
+                           "At night the stones hum faint blue light, like the sky fell in and kept shining. " +
+                           "It is dry here, and hidden. A good place to vanish.";
+                    salience = 0.85f; break;
+                case PoiType.HotSpring:
+                    line = "I found " + poi.DisplayName + " — water rising warm out of the cold earth, " +
+                           "breathing steam into the morning. I stood in it to my belly and felt my bones " +
+                           "unclench. The old ones must have known this place.";
+                    salience = 0.8f; break;
+                case PoiType.HollowLog:
+                    line = "I found " + poi.DisplayName + " — a fallen giant, hollowed by years into a tunnel " +
+                           "just my size. It smells of rain and mushrooms. The kits will love this.";
+                    salience = 0.55f; break;
+                case PoiType.RainbowGrove:
+                    // SECRET. This should feel like a once-in-many-lives moment.
+                    line = "I pushed through the pines where no trail goes, and the woods opened — and I " +
+                           "forgot how to breathe. A grove of crystal, every color I have ever seen and some " +
+                           "I have not, growing out of the moss like frozen light. Red as heart's blood, blue " +
+                           "as deep water, gold as morning. They hummed when the wind touched them — a chord " +
+                           "so pure it hurt, in the good way. I sat among them until the light changed and " +
+                           "changed again, and I understood, the way you understand a smell from childhood: " +
+                           "this place was waiting for me. It had been waiting a very long time.";
+                    salience = 1.0f; break;
                 case PoiType.Cairn:
                     line = "I reached the fork cairn. My kind have been adding stones here for years.";
                     salience = 0.4f; break;
@@ -405,7 +466,13 @@ namespace Solace.Core
                     "the first time I saw " + poi.DisplayName);
             State.Beliefs.AddOrUpdate("poi." + poi.Id + ".seen",
                 "I have seen " + poi.DisplayName, "saw", 1f, Now);
-            State.Agent.Mood = MathX.Clamp(State.Agent.Mood + 4f, 0f, 100f);
+            // Discovery lifts the spirits — moreso for the truly wondrous places.
+            float moodLift = 4f;
+            if (poi.Type == PoiType.CrystalCave || poi.Type == PoiType.HotSpring) moodLift = 10f;
+            else if (poi.Type == PoiType.Overlook || poi.Type == PoiType.InsectileRuin) moodLift = 8f;
+            else if (poi.Type == PoiType.HollowLog) moodLift = 6f;
+            else if (poi.Type == PoiType.RainbowGrove) moodLift = 20f; // once in many lives
+            State.Agent.Mood = MathX.Clamp(State.Agent.Mood + moodLift, 0f, 100f);
         }
 
         private void InjuryHook()

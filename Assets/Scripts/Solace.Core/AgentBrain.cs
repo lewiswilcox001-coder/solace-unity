@@ -36,6 +36,78 @@ namespace Solace.Core
 
         private static float ClampT(float v) { return MathX.Clamp(v, 0.05f, 0.95f); }
 
+        /// <summary>Boldness is the mirror of caution: low caution reads as bold.</summary>
+        public float Boldness { get { return 1f - Caution; } }
+
+        public Personality Clone()
+        {
+            return new Personality
+            {
+                Caution = Caution,
+                Curiosity = Curiosity,
+                Sociability = Sociability,
+                Compassion = Compassion,
+                Pride = Pride,
+                Patience = Patience
+            };
+        }
+
+        /// <summary>Mid-range temperament, used when no inherited traits exist (old saves).</summary>
+        public static Personality Neutral()
+        {
+            return new Personality
+            {
+                Caution = 0.5f,
+                Curiosity = 0.5f,
+                Sociability = 0.5f,
+                Compassion = 0.5f,
+                Pride = 0.5f,
+                Patience = 0.5f
+            };
+        }
+
+        /// <summary>
+        /// Blend two parents 50/50 with a small gaussian mutation per trait.
+        /// Deterministic for a given rng. This is what makes lineage feel
+        /// meaningful: kits carry both parents, but are never clones.
+        /// </summary>
+        public static Personality Inherit(Personality father, Personality mother, SeededRandom rng)
+        {
+            var p = new Personality();
+            p.Caution = ClampT((father.Caution + mother.Caution) * 0.5f + (float)rng.NextGaussian() * 0.07f);
+            p.Curiosity = ClampT((father.Curiosity + mother.Curiosity) * 0.5f + (float)rng.NextGaussian() * 0.07f);
+            p.Sociability = ClampT((father.Sociability + mother.Sociability) * 0.5f + (float)rng.NextGaussian() * 0.07f);
+            p.Compassion = ClampT((father.Compassion + mother.Compassion) * 0.5f + (float)rng.NextGaussian() * 0.07f);
+            p.Pride = ClampT((father.Pride + mother.Pride) * 0.5f + (float)rng.NextGaussian() * 0.07f);
+            p.Patience = ClampT((father.Patience + mother.Patience) * 0.5f + (float)rng.NextGaussian() * 0.07f);
+            return p;
+        }
+
+        /// <summary>
+        /// A readable epithet for the journal, from the strongest temperament
+        /// deviation — "the Bold", "the Timid", etc. Empty when no trait stands out.
+        /// </summary>
+        public string Epithet()
+        {
+            // Deviation from neutral, signed per trait's readable pole.
+            float boldDev = (1f - Caution) - 0.5f;   // + bold, - timid
+            float curDev = Curiosity - 0.5f;
+            float socDev = Sociability - 0.5f;
+            float patDev = Patience - 0.5f;
+            float prdDev = Pride - 0.5f;
+            float cmpDev = Compassion - 0.5f;
+
+            string best = "";
+            float bestDev = 0.18f; // must stand out to earn a name
+            if (Math.Abs(boldDev) > bestDev) { bestDev = Math.Abs(boldDev); best = boldDev > 0 ? "the Bold" : "the Timid"; }
+            if (Math.Abs(curDev) > bestDev) { bestDev = Math.Abs(curDev); best = "the Curious"; }
+            if (Math.Abs(socDev) > bestDev) { bestDev = Math.Abs(socDev); best = "the Gregarious"; }
+            if (Math.Abs(patDev) > bestDev) { bestDev = Math.Abs(patDev); best = "the Patient"; }
+            if (Math.Abs(prdDev) > bestDev) { bestDev = Math.Abs(prdDev); best = "the Proud"; }
+            if (Math.Abs(cmpDev) > bestDev) { bestDev = Math.Abs(cmpDev); best = "the Gentle"; }
+            return best;
+        }
+
         /// <summary>Slow experience-driven shift. Delta is small by design.</summary>
         public void Nudge(string trait, float delta)
         {
@@ -485,6 +557,7 @@ namespace Solace.Core
         {
             _actions.Add(new FleeAction());
             _actions.Add(new FightAction());
+            _actions.Add(new SeekShelterAction());
             _actions.Add(new EatAction());
             _actions.Add(new DrinkAction());
             _actions.Add(new RestAction());
@@ -513,7 +586,7 @@ namespace Solace.Core
                 Sim = sim,
                 Ai = sim.AiRng,
                 Ev = sim.EventRng,
-                Now = sim.State.ElapsedSeconds
+                Now = (float)sim.State.ElapsedSeconds
             };
 
             DecayNeeds(agent, dt, sim);
@@ -654,9 +727,49 @@ namespace Solace.Core
             float curiosityRate = a.Stage == LifeStage.Kit ? 0.06f : 0.03f;
             a.Curiosity = MathX.Clamp(a.Curiosity + dt * (moving ? curiosityRate * 0.27f : curiosityRate), 0f, 100f);
 
+            // Weather exposure: storms chill an unsheltered fox; shelter is cozy.
+            // Rain is merely unpleasant. (Shelter check is presentation-cheap.)
+            var weather = sim.State.Weather;
+            if (weather == Weather.Storm || weather == Weather.Rain)
+            {
+                bool sheltered = IsShelteredForWeather(sim, a);
+                if (!sheltered)
+                {
+                    float chill = weather == Weather.Storm ? 0.05f : 0.015f;
+                    a.Energy = MathX.Clamp(a.Energy - dt * chill, 0f, a.MaxEnergy);
+                    a.Mood = MathX.Clamp(a.Mood - dt * (weather == Weather.Storm ? 0.4f : 0.1f), 0f, 100f);
+                }
+                else if (weather == Weather.Storm)
+                {
+                    // Dry under cover while the sky rages: small comfort.
+                    a.Mood = MathX.Clamp(a.Mood + dt * 0.15f, 0f, 100f);
+                }
+            }
+
             a.Health = MathX.Clamp(a.Health, 0f, 100f);
             if (a.Health <= 0f && a.IsAlive)
                 sim.KillAgent("My strength gave out.");
+        }
+
+        /// <summary>
+        /// True if the agent is under cover at a shelter POI (for weather exposure).
+        /// Presentation-cheap: only checks the current target POI.
+        /// </summary>
+        private static bool IsShelteredForWeather(Simulation sim, AgentState a)
+        {
+            var poi = sim.State.World.GetPoi(a.TargetPoiId);
+            if (poi == null) return false;
+            switch (poi.Type)
+            {
+                case PoiType.Den:
+                case PoiType.EmberHollow:
+                case PoiType.CrystalCave:
+                case PoiType.HollowLog:
+                case PoiType.HotSpring:
+                    return V2.Distance(a.Pos, new V2(poi.X, poi.Z)) <= poi.Radius;
+                default:
+                    return false;
+            }
         }
 
         private void Perceive(BrainContext ctx)
@@ -846,18 +959,25 @@ namespace Solace.Core
         public override bool CanScore(BrainContext ctx)
         {
             float d;
-            var predator = ctx.NearestPredator(17f, out d);
+            var predator = ctx.NearestPredator(FleeRadius(ctx), out d);
             if (predator == null) return false;
             bool outmatched = predator.Health > 35f || ctx.Agent.Health < 55f || ctx.CountPredators(26f) > 1;
             return outmatched;
         }
 
+        /// <summary>Shy foxes scent danger sooner; bold ones hold their nerve longer.</summary>
+        private static float FleeRadius(BrainContext ctx)
+        {
+            return 13f + 8f * ctx.Agent.EffectiveCaution;
+        }
+
         public override float Score(BrainContext ctx, List<ScoreComponent> c)
         {
+            float radius = FleeRadius(ctx);
             float d;
-            ctx.NearestPredator(17f, out d);
+            ctx.NearestPredator(radius, out d);
             var a = ctx.Agent;
-            Add(c, "danger", MathX.Clamp01(1f - d / 17f), 0.55f);
+            Add(c, "danger", MathX.Clamp01(1f - d / radius), 0.55f);
             Add(c, "vulnerability", 1f - a.Health / 100f, 0.25f);
             Add(c, "caution", a.EffectiveCaution, 0.20f);
             return Total(c);
@@ -902,8 +1022,8 @@ namespace Solace.Core
                 Stop(ctx);
                 a.CurrentActivity = "catching my breath";
                 a.DecisionTimer = 0f; // re-decide now that the danger passed
-                ctx.Sim.Journal(ctx.Now, "I lost the gloom-maw and stood shaking in the heather.",
-                    JournalCategory.Combat, 0.55f);
+                // The fox's voice speaks its relief.
+                FoxVoice.OnFledToSafety(ctx.Sim);
                 // Surviving danger teaches caution; standing ground teaches pride.
                 a.Traits.Nudge("Caution", 0.01f);
                 // Outrunning a gloom-maw at close quarters becomes a tale.
@@ -965,6 +1085,7 @@ namespace Solace.Core
             Add(c, "advantage", (armed ? 0.8f : 0.35f) * (1f - predator.Health / 100f * 0.5f), 0.30f);
             Add(c, "risk", (1f - a.Health / 100f) * (armed ? 0.7f : 1f), -0.25f);
             Add(c, "pride", a.Traits.Pride * 0.5f, 0.10f);
+            Add(c, "boldness", a.Traits.Boldness * 0.5f, 0.08f);
             return Total(c);
         }
 
@@ -1030,6 +1151,9 @@ namespace Solace.Core
                     EndCombat(ctx, epitaph);
                     a.Traits.Nudge("Pride", 0.015f);
                     a.Mood = MathX.Clamp(a.Mood + (round.PredatorDies ? -6f : 8f), 0f, 100f);
+                    // The fox's voice speaks its courage.
+                    if (ctx.Ev.NextFloat() < 0.6f)
+                        FoxVoice.OnStoodGround(ctx.Sim);
                     LineageSystem.MaybeDistillTale(ctx.Sim, "Standing Ground", "Pride", 0.05f,
                         "stood down a gloom-maw and lived");
                 }
@@ -1054,6 +1178,135 @@ namespace Solace.Core
         public override string DescribeReason(BrainContext ctx)
         {
             return "The gloom-maw was on me and I had the strength and the steel — better to end it than be run down.";
+        }
+    }
+
+    // ------------------------------------------------------------ SeekShelter
+
+    /// <summary>
+    /// Storms are dangerous: the fox runs for cover (den, ember-hollow,
+    /// crystal cave, hollow log) and waits out the worst of it. Urgent in a
+    /// storm, a mild preference in rain. Never outranks fleeing a predator.
+    /// </summary>
+    public class SeekShelterAction : AgentAction
+    {
+        public override string Name { get { return "SeekShelter"; } }
+        public override string Topic { get { return "safety"; } }
+        public override bool IsSurvival { get { return true; } }
+
+        private bool _announcedArrival;
+
+        /// <summary>True if the fox is already under cover at a shelter POI.</summary>
+        public static bool IsSheltered(BrainContext ctx)
+        {
+            var a = ctx.Agent;
+            var poi = ctx.World.GetPoi(a.TargetPoiId);
+            if (poi == null) return false;
+            switch (poi.Type)
+            {
+                case PoiType.Den:
+                case PoiType.EmberHollow:
+                case PoiType.CrystalCave:
+                case PoiType.HollowLog:
+                case PoiType.HotSpring:
+                    return V2.Distance(a.Pos, new V2(poi.X, poi.Z)) <= poi.Radius;
+                default:
+                    return false;
+            }
+        }
+
+        public override bool CanScore(BrainContext ctx)
+        {
+            var w = ctx.Sim.State.Weather;
+            if (w != Weather.Storm && w != Weather.Rain) return false;
+            // Already tucked in: no need to decide again.
+            if (IsSheltered(ctx) && ctx.Agent.CurrentGoal == "SeekShelter") return false;
+            return RestAction.TargetShelter(ctx) != null;
+        }
+
+        public override float Score(BrainContext ctx, List<ScoreComponent> c)
+        {
+            var a = ctx.Agent;
+            var w = ctx.Sim.State.Weather;
+            var shelter = RestAction.TargetShelter(ctx);
+            float dist = shelter != null ? V2.Distance(a.Pos, new V2(shelter.X, shelter.Z)) : 0f;
+            bool storm = w == Weather.Storm;
+
+            // The storm itself is the urgency. Calibrated to beat Eat/Rest/Social
+            // (~0.5-0.6) but lose to an active predator Flee (~0.8-1.0).
+            Add(c, "storm", storm ? 1f : 0.45f, storm ? 0.62f : 0.30f);
+            if (!IsSheltered(ctx))
+                Add(c, "exposure", MathX.Clamp01(dist / 200f), 0.15f);
+            // Kits out in the weather: a parent hurries home.
+            int kitsOut = 0;
+            foreach (var k in ctx.Sim.State.Kits)
+                if (k.IsAlive && k.State != "Hide" && k.State != "Sleep") kitsOut++;
+            if (kitsOut > 0)
+                Add(c, "kits", MathX.Clamp01(kitsOut / 3f), storm ? 0.18f : 0.08f);
+            // The timid feel storms more keenly.
+            Add(c, "fear", a.EffectiveCaution, storm ? 0.10f : 0.05f);
+            // A predator up close outranks the storm: Flee handles it, not shelter.
+            Add(c, "predator", PredatorDanger(ctx, 30f), -0.45f);
+            return Total(c);
+        }
+
+        public override void Begin(BrainContext ctx)
+        {
+            var a = ctx.Agent;
+            a.CurrentGoal = "SeekShelter";
+            _announcedArrival = false;
+            var shelter = RestAction.TargetShelter(ctx);
+            if (shelter != null)
+            {
+                a.TargetPoiId = shelter.Id;
+                bool run = ctx.Sim.State.Weather == Weather.Storm;
+                MoveTo(ctx, shelter.X, shelter.Z, shelter.Radius * 0.6f, run);
+                a.CurrentActivity = "running for shelter from the storm";
+                FoxVoice.OnSeekShelter(ctx.Sim);
+            }
+            else
+            {
+                a.TargetPoiId = -1;
+                Stop(ctx);
+                a.CurrentActivity = "hunkering down against the storm";
+            }
+            // Storms interrupt complacency: decide again soon.
+            a.DecisionTimer = 6f;
+        }
+
+        public override void Update(BrainContext ctx, float dt)
+        {
+            var a = ctx.Agent;
+            // Storm passed: back to normal life.
+            if (ctx.Sim.State.Weather != Weather.Storm && ctx.Sim.State.Weather != Weather.Rain)
+            {
+                Stop(ctx);
+                a.DecisionTimer = 0f;
+                return;
+            }
+            var shelter = ctx.World.GetPoi(a.TargetPoiId);
+            bool arrived = shelter == null ||
+                V2.Distance(a.Pos, new V2(shelter.X, shelter.Z)) <= shelter.Radius;
+            if (!arrived) return;
+
+            Stop(ctx);
+            // Holed up: wait it out. Small comfort in being dry.
+            a.Mood = MathX.Clamp(a.Mood + dt * 0.25f, 0f, 100f);
+            a.CurrentActivity = shelter != null
+                ? "waiting out the storm in " + shelter.DisplayName
+                : "waiting out the storm";
+            if (!_announcedArrival && ctx.Sim.State.Weather == Weather.Storm)
+            {
+                _announcedArrival = true;
+                FoxVoice.OnStormSheltered(ctx.Sim);
+            }
+            // Reconsider often: the fox may get restless or the sky may clear.
+            a.DecisionTimer = Math.Min(a.DecisionTimer, 8f);
+        }
+
+        public override string DescribeReason(BrainContext ctx)
+        {
+            return "The sky had teeth in it. Shelter first — everything else can wait.";
         }
     }
 
@@ -1097,6 +1350,9 @@ namespace Solace.Core
             // Starving: food becomes urgent above all else, so Eat beats Rest/Social.
             if (a.Hunger > 85f)
                 Add(c, "starving", MathX.Clamp01((a.Hunger - 85f) / 15f), 0.60f);
+            // Storm sensed on the wind: eat now, before the sky closes.
+            if (ctx.Sim.StormSensedUntil > ctx.Now)
+                Add(c, "foreboding", 0.7f, 0.25f);
             return Total(c);
         }
 
@@ -1149,6 +1405,7 @@ namespace Solace.Core
             {
                 Stop(ctx);
                 bush.Stock--;
+                float hungerBefore = a.Hunger;
                 a.Hunger = MathX.Clamp(a.Hunger - 30f, 0f, 100f);
                 a.Mood = MathX.Clamp(a.Mood + 3f, 0f, 100f);
                 a.CurrentActivity = "picking glowberries";
@@ -1160,11 +1417,17 @@ namespace Solace.Core
                     "the bush " + DescribeWhere(ctx, bush) + " has glowberries",
                     "saw", 0.8f, ctx.Now);
                 if (ctx.Ev.NextFloat() < 0.35f || bush.Stock == 0)
-                    ctx.Sim.Journal(ctx.Now,
-                        bush.Stock == 0
-                            ? "I stripped the last of the glowberries. The bush will need time."
-                            : "I ate glowberries warm from the sun, light on my tongue.",
-                        JournalCategory.Survival, 0.3f, 1f, bush.Id);
+                {
+                    // The fox's voice speaks when the meal mattered.
+                    if (hungerBefore > 55f || ctx.Ev.NextFloat() < 0.4f)
+                        FoxVoice.OnAte(ctx.Sim, hungerBefore);
+                    else
+                        ctx.Sim.Journal(ctx.Now,
+                            bush.Stock == 0
+                                ? "I stripped the last of the glowberries. The bush will need time."
+                                : "I ate glowberries warm from the sun, light on my tongue.",
+                            JournalCategory.Survival, 0.3f, 1f, bush.Id);
+                }
                 if (a.Hunger < 25f) a.DecisionTimer = 0f; // sated: choose anew
             }
         }
@@ -1263,16 +1526,62 @@ namespace Solace.Core
         public override string Topic { get { return "rest"; } }
         public override bool IsSurvival { get { return true; } }
 
-        public PointOfInterest TargetShelter(BrainContext ctx)
+        /// <summary>How comforting a shelter type feels (0..~1.1).</summary>
+        public static float ShelterComfort(PoiType t)
+        {
+            switch (t)
+            {
+                case PoiType.HotSpring: return 1.0f;
+                case PoiType.EmberHollow: return 0.9f;
+                case PoiType.CrystalCave: return 0.85f;
+                case PoiType.Den: return 0.75f;
+                case PoiType.HollowLog: return 0.65f;
+                default: return 0.4f;
+            }
+        }
+
+        /// <summary>Energy-regen quality multiplier while resting at a shelter type.</summary>
+        public static float ShelterRestQuality(PoiType t)
+        {
+            switch (t)
+            {
+                case PoiType.HotSpring: return 2.8f;   // warm water melts fatigue
+                case PoiType.EmberHollow: return 2.2f;
+                case PoiType.CrystalCave: return 2.0f;  // dry, hidden, calm
+                case PoiType.Den: return 1.8f;
+                case PoiType.HollowLog: return 1.5f;
+                default: return 1.0f;
+            }
+        }
+
+        private static string RestActivityText(PoiType t)
+        {
+            switch (t)
+            {
+                case PoiType.HotSpring: return "soaking in the hot spring";
+                case PoiType.EmberHollow: return "resting in the ember-hollow";
+                case PoiType.CrystalCave: return "resting in the crystal cave";
+                case PoiType.HollowLog: return "curled up in the hollow log";
+                case PoiType.Den: return "resting at the den";
+                default: return "resting";
+            }
+        }
+
+        public static PointOfInterest TargetShelter(BrainContext ctx)
         {
             PointOfInterest best = null;
             float bestScore = float.MinValue;
             foreach (var poi in ctx.World.Pois)
             {
-                if (poi.Type != PoiType.EmberHollow && poi.Type != PoiType.Den) continue;
+                if (poi.Type != PoiType.EmberHollow && poi.Type != PoiType.Den &&
+                    poi.Type != PoiType.CrystalCave && poi.Type != PoiType.HotSpring &&
+                    poi.Type != PoiType.HollowLog) continue;
                 if (!ctx.Agent.KnownPoiIds.Contains(poi.Id) && poi.Type != PoiType.Den) continue;
                 float d = V2.Distance(ctx.Agent.Pos, new V2(poi.X, poi.Z));
-                float comfort = poi.Type == PoiType.EmberHollow ? 1f : 0.8f;
+                float comfort = poi.Type == PoiType.HotSpring ? 1.1f
+                    : poi.Type == PoiType.EmberHollow ? 1f
+                    : poi.Type == PoiType.CrystalCave ? 0.95f
+                    : poi.Type == PoiType.HollowLog ? 0.7f : 0.8f;
                 float score = comfort - d / 300f;
                 if (score > bestScore) { bestScore = score; best = poi; }
             }
@@ -1287,7 +1596,7 @@ namespace Solace.Core
             var shelter = TargetShelter(ctx);
             float dist = shelter != null ? V2.Distance(a.Pos, new V2(shelter.X, shelter.Z)) : 0f;
             Add(c, "fatigue", (100f - a.Energy) / 100f, 0.45f);
-            Add(c, "comfort", shelter != null ? (shelter.Type == PoiType.EmberHollow ? 0.9f : 0.75f) : 0.4f, 0.20f);
+            Add(c, "comfort", shelter != null ? ShelterComfort(shelter.Type) : 0.4f, 0.20f);
             Add(c, "effort", dist / 300f, -0.15f);
             Add(c, "risk", PredatorDanger(ctx, 45f), -0.20f);
             // Sickness makes rest urgent: the light needs tending.
@@ -1305,9 +1614,7 @@ namespace Solace.Core
             {
                 a.TargetPoiId = shelter.Id;
                 MoveTo(ctx, shelter.X, shelter.Z, shelter.Radius * 0.6f, false);
-                a.CurrentActivity = shelter.Type == PoiType.EmberHollow
-                    ? "going to rest in the ember-hollow"
-                    : "going home to rest";
+                a.CurrentActivity = "going to rest at " + shelter.DisplayName;
             }
             else
             {
@@ -1326,15 +1633,16 @@ namespace Solace.Core
             if (!arrived) return;
 
             Stop(ctx);
-            float quality = shelter == null ? 1.0f : shelter.Type == PoiType.EmberHollow ? 2.2f : 1.8f;
+            float quality = shelter == null ? 1.0f : ShelterRestQuality(shelter.Type);
             // Sickness taxes rest: the light rekindles slower.
             quality *= 1f - 0.55f * a.SicknessSeverity;
             a.Energy = MathX.Clamp(a.Energy + dt * quality, 0f, a.MaxEnergy);
             if (a.Hunger < 60f && a.Thirst < 60f)
                 a.Health = Math.Min(100f, a.Health + dt * 0.15f);
-            a.CurrentActivity = shelter != null && shelter.Type == PoiType.EmberHollow
-                ? "resting in the ember-hollow" : "resting";
-            a.Mood = MathX.Clamp(a.Mood + dt * 0.2f, 0f, 100f);
+            a.CurrentActivity = shelter != null ? RestActivityText(shelter.Type) : "resting";
+            // Hot springs soothe: a warm soak lifts the mood and eases aches.
+            float moodRate = shelter != null && shelter.Type == PoiType.HotSpring ? 0.5f : 0.2f;
+            a.Mood = MathX.Clamp(a.Mood + dt * moodRate, 0f, 100f);
 
             // Tales are told at rest, near kits or kindred.
             TellTale(ctx);
@@ -1400,8 +1708,11 @@ namespace Solace.Core
             switch (t)
             {
                 case PoiType.InsectileRuin: return 1.0f;
+                case PoiType.CrystalCave: return 0.92f;
                 case PoiType.RuinSite: return 0.85f;
+                case PoiType.HotSpring: return 0.72f;
                 case PoiType.Overlook: return 0.6f;
+                case PoiType.HollowLog: return 0.52f;
                 case PoiType.Cairn: return 0.45f;
                 case PoiType.EmberHollow: return 0.35f;
                 case PoiType.GlowberryBush: return 0.3f;
@@ -1436,6 +1747,7 @@ namespace Solace.Core
             Add(c, "effort", d / 400f, -0.20f);
             Add(c, "risk", PredatorDanger(ctx, 50f) * 0.6f + a.EffectiveCaution * (d / 400f) * 0.6f, -0.15f);
             Add(c, "curiosity", a.EffectiveCuriosity / 100f * mystery, 0.10f);
+            Add(c, "boldness", a.Traits.Boldness * (d / 400f), 0.10f); // the bold go far
             return Total(c);
         }
 

@@ -86,7 +86,7 @@ namespace Solace.Core
             UpdateLevel(comp);
 
             // Remember presence, throttled: being there matters.
-            float now = s.ElapsedSeconds;
+            float now = (float)s.ElapsedSeconds;
             if ((intent == "greeting" || intent == "status" || intent == "recap")
                 && now - comp.LastTalkTime > 300f)
             {
@@ -437,7 +437,7 @@ namespace Solace.Core
                 sb.Append(ProvenancePrefix(e));
                 sb.Append(e.Text);
                 sb.Append(" (");
-                sb.Append(AgoPhrase(s.ElapsedSeconds - e.Time));
+                sb.Append(AgoPhrase((float)(s.ElapsedSeconds - e.Time)));
                 sb.Append(")");
             }
             return sb.ToString();
@@ -524,7 +524,7 @@ namespace Solace.Core
             float weight = 0.25f + 0.1f * (int)s.Companion.Level;
             // Spammy suggestions get heard with a cooler ear.
             var c = s.Companion;
-            float now = s.ElapsedSeconds;
+            float now = (float)s.ElapsedSeconds;
             if (now - c.SuggestionWindowStart > 3600f)
             {
                 c.SuggestionWindowStart = now;

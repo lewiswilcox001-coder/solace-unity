@@ -27,6 +27,16 @@ namespace Solace.Unity
         public ObserverCamera Camera { get; private set; }
         public HudController Hud { get; private set; }
 
+        /// <summary>Which save slot is active. Chosen on the slot menu; 0 by default.</summary>
+        public int ActiveSlot { get; private set; }
+
+        /// <summary>The active challenge run (mode, run-over state, speedrun timing).
+        /// Standard for plain lives; loaded from the slot sidecar when present.</summary>
+        public ChallengeState Challenge { get; private set; }
+
+        /// <summary>True while the shared daily vale is open (not a save slot).</summary>
+        public bool InDailyWorld { get; private set; }
+
         /// <summary>Protagonist's rig root (for camera framing / verification).</summary>
         public Transform AgentRoot
         {
@@ -39,7 +49,7 @@ namespace Solace.Unity
         private GameObject _agentRootGO;
         private AgentView _agentView;
         private int _seenGeneration = 1;
-        private float _lastSaveGameTime = -9999f;
+        private double _lastSaveGameTime = -9999.0;
         private bool _started;
 
         private const float AutosaveGameInterval = 3600f; // one game-hour
@@ -74,8 +84,8 @@ namespace Solace.Unity
             if (_started) return;
             _started = true;
             BuildShell();
-            if (!TryBootFromSave())
-                StartNewLife(UnityEngine.Random.Range(1, 1000000000));
+            // The slot menu drives the rest: pick a world to continue, or begin anew.
+            UI.SaveSlotMenu.Show(this);
             Application.quitting += SaveNow;
         }
 
@@ -103,31 +113,49 @@ namespace Solace.Unity
         /// <summary>Starts a fresh life on the given seed, rebuilding all views.</summary>
         public void StartNewLife(int seed)
         {
+            StartNewLife(seed, ChallengeMode.Standard);
+        }
+
+        /// <summary>Starts a fresh life on the given seed under a challenge mode.</summary>
+        public void StartNewLife(int seed, ChallengeMode mode)
+        {
             TeardownWorld();
-            Sim = Simulation.NewLife(seed);
+            Sim = ChallengeModes.NewChallengeLife(seed, mode);
+            Challenge = ChallengeState.NewRun(mode);
+            ChallengeModes.ActiveMode = mode;
             Seed = seed;
+            // Golden hour opening: new lives begin at dusk for the cinematic.
+            // (Loaded saves keep their own time.)
+            Sim.State.StartHour = 17.5f;
             _seenGeneration = Sim.State.Lineage.Generation;
             _lastSaveGameTime = Sim.State.ElapsedSeconds;
             BuildWorld();
             SyncAllViews();
             if (Camera != null) Camera.SnapToAgent();
-            ShowToast("A new life begins — seed " + seed, 5f);
+            // Cinematic opening for first-time experience.
+            OpeningSequence.PlayForNewLife(this);
             Debug.Log("[Solace] New life started, seed " + seed);
         }
 
-        private bool TryBootFromSave()
+        /// <summary>Loads a save slot and starts watching it. Returns false when the slot is empty.</summary>
+        public bool LoadSlot(int slot)
         {
-            string path = SavePath;
-            if (!File.Exists(path)) return false;
+            string json = SaveSlots.LoadSlotJson(SaveDir, slot);
+            if (string.IsNullOrEmpty(json)) return false;
             try
             {
-                var state = SaveSystem.Load(File.ReadAllText(path));
+                InDailyWorld = false;
+                ActiveSlot = slot;
+                var state = SaveSystem.Load(json);
                 int journalBefore = state.Journal.Count;
-                TimeSpan away = ReadAwayTime();
+                TimeSpan away = SaveSlots.AwayTime(SaveDir, slot);
                 if (away.TotalSeconds > 5.0)
                     SaveSystem.ApplyOfflineProgress(state, away, OfflineMode.LivingWorld);
                 Sim = new Simulation(state);
                 Seed = state.Seed;
+                // Challenge state lives in the slot sidecar; standard when absent.
+                Challenge = ChallengeSave.Load(SaveDir, slot) ?? ChallengeState.NewRun(ChallengeMode.Standard);
+                ChallengeModes.ActiveMode = Challenge.Mode;
                 _seenGeneration = state.Lineage.Generation;
                 _lastSaveGameTime = state.ElapsedSeconds;
                 BuildWorld();
@@ -156,9 +184,91 @@ namespace Solace.Unity
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[Solace] Save load failed, starting fresh: " + ex.Message);
+                Debug.LogWarning("[Solace] Save load failed: " + ex.Message);
                 return false;
             }
+        }
+
+        /// <summary>Starts a fresh life on a random seed inside the given slot.</summary>
+        public void NewLifeInSlot(int slot)
+        {
+            NewLifeInSlot(slot, ChallengeMode.Standard);
+        }
+
+        /// <summary>Starts a fresh life on a random seed inside the given slot, under a challenge mode.</summary>
+        public void NewLifeInSlot(int slot, ChallengeMode mode)
+        {
+            InDailyWorld = false;
+            ActiveSlot = slot;
+            StartNewLife(UnityEngine.Random.Range(1, 1000000000), mode);
+        }
+
+        /// <summary>
+        /// Opens today's shared vale: loads today's daily save if the player
+        /// already wandered it, otherwise starts a fresh life on the daily
+        /// seed (identical for every player). Records the streak visit.
+        /// </summary>
+        public void LoadDailyWorld()
+        {
+            DateTime today = DateTime.UtcNow.Date;
+            string ds = DailyVale.DateString(today);
+            int streak = DailyVale.RecordVisit(SaveDir, today);
+            InDailyWorld = true;
+            ActiveSlot = -1;
+
+            string json = DailyVale.LoadDailyJson(SaveDir, today);
+            if (!string.IsNullOrEmpty(json))
+            {
+                try
+                {
+                    var state = SaveSystem.Load(json);
+                    int journalBefore = state.Journal.Count;
+                    TimeSpan away = DailyVale.DailyAwayTime(SaveDir, today);
+                    if (away.TotalSeconds > 5.0)
+                        SaveSystem.ApplyOfflineProgress(state, away, OfflineMode.LivingWorld);
+                    Sim = new Simulation(state);
+                    Seed = state.Seed;
+                    state.DailyInfo = new DailyVisitInfo
+                    {
+                        IsDailyWorld = true,
+                        DateString = ds,
+                        StreakDays = streak
+                    };
+                    _seenGeneration = state.Lineage.Generation;
+                    _lastSaveGameTime = state.ElapsedSeconds;
+                    BuildWorld();
+                    SyncAllViews();
+                    if (Camera != null) Camera.SnapToAgent();
+                    int gained = state.Journal.Count - journalBefore;
+                    ShowToast("◆ Today's Vale · " + DailyVale.PrettyDate(ds) +
+                              " · " + StreakText(streak) +
+                              (gained > 0 ? " · " + gained + " new while away" : ""),
+                              6f);
+                    Debug.Log("[Solace] Daily vale loaded (" + ds + ", streak " + streak + ").");
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[Solace] Daily load failed, starting fresh: " + ex.Message);
+                }
+            }
+
+            StartNewLife(DailyVale.SeedFor(today));
+            Sim.State.DailyInfo = new DailyVisitInfo
+            {
+                IsDailyWorld = true,
+                DateString = ds,
+                StreakDays = streak
+            };
+            ShowToast("◆ Today's Vale · " + DailyVale.PrettyDate(ds) +
+                      " · " + StreakText(streak), 6f);
+            Debug.Log("[Solace] Daily vale begun (" + ds + ", streak " + streak + ").");
+        }
+
+        private static string StreakText(int streak)
+        {
+            if (streak <= 1) return "day 1 — come back tomorrow";
+            return streak + "-day streak";
         }
 
         // -- per-frame ----------------------------------------------------------
@@ -167,6 +277,26 @@ namespace Solace.Unity
         {
             if (Sim == null) return;
             Sim.Step(Time.deltaTime);
+
+            // Challenge director: peaceful sweeps, hardcore run-over, speedrun timing.
+            bool wasOver = Challenge != null && Challenge.RunOver;
+            ChallengeDirector.Tick(Sim, Challenge);
+            if (Challenge != null)
+            {
+                if (!wasOver && Challenge.RunOver)
+                    ShowToast("The hardcore run has ended — the vale keeps the tales.", 8f);
+                if (Challenge.LastSpeedrunEntry != null)
+                {
+                    var entry = Challenge.LastSpeedrunEntry;
+                    Challenge.LastSpeedrunEntry = null;
+                    int rank = ChallengeSave.RecordRun(SaveDir, entry);
+                    ShowToast(rank > 0
+                        ? "◆ Speedrun complete — rank #" + rank + " (" +
+                          ChallengeModes.FormatDuration(entry.GameSeconds) + " of vale-time)"
+                        : "◆ Speedrun complete (" +
+                          ChallengeModes.FormatDuration(entry.GameSeconds) + " of vale-time)", 10f);
+                }
+            }
 
             int gen = Sim.State.Lineage.Generation;
             if (gen != _seenGeneration)
@@ -181,7 +311,10 @@ namespace Solace.Unity
             if (Input.GetKeyDown(KeyCode.N) && !Hud.IsTyping)
             {
                 SaveNow();
-                StartNewLife(UnityEngine.Random.Range(1, 1000000000));
+                InDailyWorld = false;
+                // A fresh life keeps the current slot's challenge mode.
+                StartNewLife(UnityEngine.Random.Range(1, 1000000000),
+                    Challenge != null ? Challenge.Mode : ChallengeMode.Standard);
             }
             if (Input.GetKeyDown(KeyCode.Escape)) Hud.CloseAllPanels();
         }
@@ -218,52 +351,33 @@ namespace Solace.Unity
 
         // -- save / load --------------------------------------------------------
 
-        private static string SaveDir
+        /// <summary>Save directory, shared by all slots.</summary>
+        public static string SaveDir
         {
             get { return Path.Combine(Application.persistentDataPath, "Solace"); }
         }
 
-        private static string SavePath
-        {
-            get { return Path.Combine(SaveDir, "save.json"); }
-        }
-
-        /// <summary>Atomic-ish save: write temp, then move over the old file.</summary>
+        /// <summary>Atomic-ish save: slots rotate backups; daily worlds write to their date file.</summary>
         public void SaveNow()
         {
             if (Sim == null) return;
             try
             {
-                Directory.CreateDirectory(SaveDir);
-                string json = SaveSystem.Save(Sim.State);
-                string tmp = Path.Combine(SaveDir, "save.json.tmp");
-                string dst = SavePath;
-                File.WriteAllText(tmp, json);
-                if (File.Exists(dst)) File.Delete(dst);
-                File.Move(tmp, dst);
-                File.WriteAllText(Path.Combine(SaveDir, "save-meta.txt"),
-                                  DateTime.UtcNow.Ticks.ToString());
+                if (InDailyWorld)
+                {
+                    DailyVale.SaveDaily(SaveDir, DateTime.UtcNow.Date, Sim.State);
+                }
+                else
+                {
+                    SaveSlots.SaveSlot(SaveDir, ActiveSlot, Sim.State);
+                    SlotThumbnail.WriteSlotThumbnail(SaveDir, ActiveSlot, Sim.State.Seed);
+                    ChallengeSave.Save(SaveDir, ActiveSlot, Challenge);
+                }
                 _lastSaveGameTime = Sim.State.ElapsedSeconds;
             }
             catch (Exception ex)
             {
                 Debug.LogWarning("[Solace] Save failed: " + ex.Message);
-            }
-        }
-
-        private static TimeSpan ReadAwayTime()
-        {
-            try
-            {
-                string meta = Path.Combine(SaveDir, "save-meta.txt");
-                if (!File.Exists(meta)) return TimeSpan.Zero;
-                long ticks = long.Parse(File.ReadAllText(meta).Trim());
-                TimeSpan away = DateTime.UtcNow - new DateTime(ticks, DateTimeKind.Utc);
-                return away.TotalSeconds > 0 ? away : TimeSpan.Zero;
-            }
-            catch
-            {
-                return TimeSpan.Zero;
             }
         }
 
@@ -297,6 +411,10 @@ namespace Solace.Unity
             colossi.Build(world);
             var daynight = _worldRoot.AddComponent<DayNightCycle>();
             daynight.Build(world);
+            var seasons = _worldRoot.AddComponent<SeasonView>();
+            seasons.Build(world, terrain);
+            var spirit = _worldRoot.AddComponent<SpiritFox>();
+            spirit.Build(world);
 
             _actorRoot = new GameObject("Actors");
             _actorRoot.AddComponent<EntityViewManager>();

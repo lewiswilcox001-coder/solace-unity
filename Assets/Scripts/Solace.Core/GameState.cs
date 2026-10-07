@@ -124,7 +124,10 @@ namespace Solace.Core
         public const int SchemaVersion = 2;
 
         public int Seed;
-        public float ElapsedSeconds;   // game seconds since the life began
+        // Game seconds since the life began. DOUBLE, not float: at 20+ days
+        // (1.7M seconds) float epsilon exceeds the 1/30s fixed step and time
+        // would freeze. A year is 80 days; the sim must track them all.
+        public double ElapsedSeconds;
         public float StartHour = 9f;   // time of day at t=0
         public Weather Weather = Weather.Clear;
         public float WeatherChangedAt;
@@ -140,6 +143,12 @@ namespace Solace.Core
         public BeliefStore Beliefs = new BeliefStore();
         public SocialMemory Social = new SocialMemory();
         public Inventory Inventory = new Inventory();
+        /// <summary>
+        /// Transient: set at boot when opening a daily vale, never serialized.
+        /// Null for slot/custom worlds. Tells the HUD and milestone detection
+        /// that this is the shared daily world (and the current streak).
+        /// </summary>
+        public DailyVisitInfo DailyInfo;
         public CompanionState Companion = new CompanionState();
         public RngStates Rng = new RngStates();
         public ToolBudgetState ToolBudgets = new ToolBudgetState();
@@ -147,6 +156,12 @@ namespace Solace.Core
         public DecisionTrace LastDecision = new DecisionTrace();
         /// <summary>Every dream ever dreamed — part of the multi-generational chronicle.</summary>
         public DreamJournal Dreams = new DreamJournal();
+        /// <summary>Milestones/achievements: celebration of moments. Detection only.</summary>
+        public MilestoneState Milestones = new MilestoneState();
+        /// <summary>Easter eggs and secrets: gifts for the curious. Detection only.</summary>
+        public EasterEggState Eggs = new EasterEggState();
+        /// <summary>Lifetime statistics: the measure of a life. Tracking only.</summary>
+        public StatState Stats = new StatState();
         /// <summary>
         /// Leftover fractional game-time in the fixed-step accumulator.
         /// Serialized so save/load doesn't shift the step cadence.
@@ -158,14 +173,16 @@ namespace Solace.Core
         {
             get
             {
-                float t = (StartHour + ElapsedSeconds / 3600f) % 24f;
-                return t < 0 ? t + 24f : t;
+                double t = (StartHour + ElapsedSeconds / 3600.0) % 24.0;
+                if (t < 0) t += 24.0;
+                return (float)t;
             }
         }
 
         public bool IsNight
         {
-            get { float h = TimeOfDay; return h < 5.5f || h > 21.5f; }
+            // Nights breathe with the year: long and hungry in winter, brief in summer.
+            get { return SeasonSystem.IsNightAt(SeasonSystem.Current(this), TimeOfDay); }
         }
 
         public JsonObject ToJson()
@@ -192,6 +209,9 @@ namespace Solace.Core
             o.Add("inventory", Inventory.ToJson());
             o.Add("companion", Companion.ToJson());
             o.Add("dreams", Dreams.ToJson());
+            o.Add("milestones", Milestones.ToJson());
+            o.Add("easterEggs", Eggs.ToJson());
+            o.Add("stats", Stats.ToJson());
             o.Add("rng", Rng.ToJson());
             o.Add("toolBudgets", ToolBudgets.ToJson());
             o.Add("lastDecision", LastDecision.ToJson());
@@ -206,7 +226,7 @@ namespace Solace.Core
                 throw new JsonParseException("Unsupported save schema version: " + schema);
             var s = new GameState();
             s.Seed = JsonHelpers.GetInt(o, "seed", 0);
-            s.ElapsedSeconds = JsonHelpers.GetFloat(o, "elapsedSeconds", 0f);
+            s.ElapsedSeconds = JsonHelpers.GetDouble(o, "elapsedSeconds", 0.0);
             s.StartHour = JsonHelpers.GetFloat(o, "startHour", 9f);
             s.Weather = (Weather)Enum.Parse(typeof(Weather), JsonHelpers.GetString(o, "weather", "Clear"));
             s.WeatherChangedAt = JsonHelpers.GetFloat(o, "weatherChangedAt", 0f);
@@ -233,6 +253,15 @@ namespace Solace.Core
             JsonValue drjv;
             s.Dreams = o.TryGet("dreams", out drjv) && !drjv.IsNull
                 ? DreamJournal.FromJson(drjv.AsObject()) : new DreamJournal();
+            JsonValue mmv;
+            s.Milestones = o.TryGet("milestones", out mmv) && !mmv.IsNull
+                ? MilestoneState.FromJson(mmv.AsObject()) : new MilestoneState();
+            JsonValue egv;
+            s.Eggs = o.TryGet("easterEggs", out egv) && !egv.IsNull
+                ? EasterEggState.FromJson(egv.AsObject()) : new EasterEggState();
+            JsonValue stv;
+            s.Stats = o.TryGet("stats", out stv) && !stv.IsNull
+                ? StatState.FromJson(stv.AsObject()) : new StatState();
             s.Rng = RngStates.FromJson(o["rng"].AsObject());
             s.ToolBudgets = ToolBudgetState.FromJson(o["toolBudgets"].AsObject());
             JsonValue ldv;

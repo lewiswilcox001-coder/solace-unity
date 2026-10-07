@@ -35,10 +35,30 @@ namespace Solace.Unity.Character
         public Transform LegBR_Upper, LegBR_Lower, LegBR_Paw;
         public Transform ChestCore;      // small emissive sphere set into the chest
         public Light CoreLight;          // warm PointLight at the core
+        /// <summary>
+        /// Inner motion node between Root and Body. The animator writes its
+        /// root-motion bob here so it never fights the world-space transform
+        /// that external views (AgentView, KindredView) drive on Root.
+        /// </summary>
+        public Transform MotionRoot;
 
         Material _coreMat;
         readonly Color _coreEmission = new Color(1f, 0.52f, 0.16f);
+        static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
         float _scale = 1f;
+
+        // ---- visual smoothing (presentation only; the sim drives Root as a target)
+        Vector3 _smoothPos;
+        float _smoothYaw;
+        bool _hasSmooth;
+        Vector3 _prevSmoothPos;
+        float _visualSpeed;          // smoothed world-units-per-second, real time
+        float _speedFactor;          // 0..1 normalised for glow/run feel
+        float _turnVel;              // smoothed signed yaw velocity, deg/s
+        float _baseGlow = 1f;
+        float _playbackRate = 1f;    // smoothed gait rate fed to the animator
+        float _lastBank;             // smoothed bank roll, degrees
+        FoxAnimator _anim;           // cached; lives on Root's GameObject
 
         // ---------------------------------------------------------------- build
 
@@ -58,14 +78,116 @@ namespace Solace.Unity.Character
         /// 0..1: drives core emissive intensity + light intensity/range.
         /// At 0 the core is dark and the light is off — the dimmed/sick read.
         /// The coat never changes: only the core and its light respond.
+        /// The value is stored as the base glow; LateUpdate breathes on top of
+        /// it (lively pulse when healthy, slow faint flicker when dim) and adds
+        /// a running boost, so the signature reads alive.
         /// </summary>
         public void SetGlow(float glow)
         {
-            glow = Mathf.Clamp01(glow);
-            float e = 5.0f * Mathf.Pow(glow, 1.4f); // gentle shoulder near full
-            _coreMat.SetColor("_EmissionColor", _coreEmission * e);
-            CoreLight.intensity = 14f * glow;               // physical-ish candela (Unity 6)
-            CoreLight.range = (2f + 4f * glow) * _scale;
+            _baseGlow = Mathf.Clamp01(glow);
+            ApplyGlow(_baseGlow, 1f, 0f); // immediate, unmodulated
+        }
+
+        /// <summary>Current smoothed visual speed, world units per real second.</summary>
+        public float VisualSpeed => _visualSpeed;
+
+        /// <summary>Snap the smoothed visual transform to the sim target (teleports, succession).</summary>
+        public void SnapVisual()
+        {
+            _smoothPos = Root.position;
+            _smoothYaw = Root.rotation.eulerAngles.y;
+            _prevSmoothPos = _smoothPos;
+            _hasSmooth = true;
+        }
+
+        void LateUpdate()
+        {
+            if (Root == null) return;
+            float dt = Mathf.Max(Time.deltaTime, 1e-4f);
+
+            // ---- read the sim target (AgentView/KindredView wrote it in Update)
+            Vector3 targetPos = Root.position;
+            float targetYaw = Root.rotation.eulerAngles.y;
+
+            // Teleport / succession / first frame: snap instead of gliding.
+            if (!_hasSmooth || (targetPos - _smoothPos).sqrMagnitude > 16f)
+            {
+                SnapVisual();
+                targetPos = Root.position;
+                targetYaw = Root.rotation.eulerAngles.y;
+            }
+
+            // ---- critically-damped-ish follow: position eases (accel/decel feel)
+            float pk = 1f - Mathf.Exp(-10f * dt);
+            _smoothPos = Vector3.Lerp(_smoothPos, targetPos, pk);
+
+            // ---- turning: rate-limited yaw so direction changes carve, never pivot
+            float maxTurn = 300f * dt; // deg per frame cap
+            float want = Mathf.DeltaAngle(_smoothYaw, targetYaw);
+            float applied = Mathf.Clamp(want, -maxTurn, maxTurn);
+            float tk = 1f - Mathf.Exp(-7f * dt);
+            float newYaw = _smoothYaw + applied * tk;
+            float rawVel = Mathf.DeltaAngle(_smoothYaw, newYaw) / dt;
+            _turnVel = Mathf.Lerp(_turnVel, rawVel, 1f - Mathf.Exp(-6f * dt));
+            _smoothYaw = newYaw;
+
+            Root.position = _smoothPos;
+            Root.rotation = Quaternion.Euler(0f, _smoothYaw, 0f);
+
+            // ---- visual speed (for gait sync + glow boost)
+            float inst = (_smoothPos - _prevSmoothPos).magnitude / dt;
+            _prevSmoothPos = _smoothPos;
+            _visualSpeed = Mathf.Lerp(_visualSpeed, inst, 1f - Mathf.Exp(-5f * dt));
+            _speedFactor = Mathf.Clamp01(_visualSpeed / 8f);
+
+            // ---- bank into the turn: roll the body, proportional to turn rate × speed
+            if (Body != null)
+            {
+                float bank = Mathf.Clamp(-_turnVel * (0.4f + _speedFactor) * 0.045f, -18f, 18f);
+                bank = Mathf.Lerp(_lastBank, bank, 1f - Mathf.Exp(-8f * dt));
+                _lastBank = bank;
+                Body.localRotation = Body.localRotation * Quaternion.Euler(0f, 0f, bank);
+            }
+
+            // ---- gait playback rate: keep paws near the ground speed
+            if (_anim == null && Root != null) _anim = Root.GetComponent<FoxAnimator>();
+            if (_anim != null)
+            {
+                float contract = ContractSpeed(_anim.Current);
+                float wantRate = contract > 0f
+                    ? Mathf.Clamp(_visualSpeed / contract, 0.7f, 1.35f)
+                    : 1f;
+                _playbackRate = Mathf.Lerp(_playbackRate, wantRate, 1f - Mathf.Exp(-4f * dt));
+                _anim.PlaybackRate = _playbackRate;
+            }
+
+            // ---- breathing core glow
+            ApplyGlow(_baseGlow, 1f + 0.30f * _speedFactor, _speedFactor);
+        }
+
+        /// <summary>Locomotion contract speeds (m/s) from the animator's gait clips.</summary>
+        static float ContractSpeed(FoxAnimator.Clip clip)
+        {
+            switch (clip)
+            {
+                case FoxAnimator.Clip.Walk: return FoxAnimator.WalkSpeed;
+                case FoxAnimator.Clip.Trot: return FoxAnimator.TrotSpeed;
+                case FoxAnimator.Clip.Run:  return FoxAnimator.GallopSpeed;
+                default: return 0f;
+            }
+        }
+
+        void ApplyGlow(float glow, float runBoost, float speedFactor)
+        {
+            if (_coreMat == null || CoreLight == null) return;
+            float t = Time.time;
+            // Healthy = lively pulse; dim/sick = slow, faint flicker.
+            float rate = Mathf.Lerp(0.7f, 2.1f, glow);
+            float breathe = 1f + 0.09f * Mathf.Sin(t * rate * Mathf.PI * 2f);
+            float e = 5.0f * Mathf.Pow(glow, 1.4f) * breathe * runBoost;
+            _coreMat.SetColor(EmissionColorId, _coreEmission * e);
+            CoreLight.intensity = 14f * glow * breathe * (1f + 0.5f * speedFactor);
+            CoreLight.range = (2f + 4f * glow) * _scale * (1f + 0.2f * speedFactor);
             CoreLight.enabled = glow > 0.003f;
         }
 
@@ -85,9 +207,10 @@ namespace Solace.Unity.Character
             _coreMat    = Mat(lit, new Color(0.16f, 0.07f, 0.03f), _coreEmission, 5f);
 
             Root = Node(transform, "Root", Vector3.zero);
+            MotionRoot = Node(Root, "MotionRoot", Vector3.zero);
 
             // ---- spine ----
-            Body = Node(Root, "Body", V(0, 0.72f, -0.10f, s));
+            Body = Node(MotionRoot, "Body", V(0, 0.72f, -0.10f, s));
             Ball(Body, V(0, 0.02f, -0.03f, s), 0.150f * s, _russet, new Vector3(0.95f, 1.0f, 1.25f)); // pelvis
             // torso: tapered box, deep at the chest, lying along Z
             var torso = MeshNode(Body, "Torso",

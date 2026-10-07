@@ -34,7 +34,11 @@ namespace Solace.Core
         EmberHollow,    // 3 — warm glow-moss hollow: rest and shelter
         GlowberryBush,  // 4 — harvestable food (Stock = berries remaining)
         RuinSite,       // 5 — lesser ruins: husk circles, old burrow-arches
-        Overlook        // 6 — high viewpoint over the vale
+        Overlook,       // 6 — high viewpoint over the vale
+        CrystalCave,    // 7 — crystal grotto: glows at night, shelter
+        HotSpring,      // 8 — warm geothermal pool: rest and recovery
+        HollowLog,      // 9 — fallen hollow log: shelter, kits play here
+        RainbowGrove    // 10 — SECRET: hidden grove of rainbow crystals (~1% of worlds)
     }
 
     /// <summary>A named place in the world. Discovery state is per-life.</summary>
@@ -66,6 +70,10 @@ namespace Solace.Core
                     case PoiType.GlowberryBush: return "a glowberry bush";
                     case PoiType.RuinSite: return "some old stones";
                     case PoiType.Overlook: return "a high viewpoint";
+                    case PoiType.CrystalCave: return "a crystal cave";
+                    case PoiType.HotSpring: return "a hot spring";
+                    case PoiType.HollowLog: return "a hollow log";
+                    case PoiType.RainbowGrove: return "a hidden grove";
                     default: return "an unfamiliar place";
                 }
             }
@@ -335,6 +343,14 @@ namespace Solace.Core
             { "the Hollow Hive", "the Chitin Spire", "Vessaril", "the Carapace Vault", "Mothenor" };
         private static readonly string[] RuinNames =
             { "the chitin field", "the old burrow-arch", "the husk circle", "the drowned hollow" };
+        private static readonly string[] CrystalCaveNames =
+            { "the singing deep", "the glass hollow", "the star-throat", "the crystal womb", "the deep glimmer" };
+        private static readonly string[] HotSpringNames =
+            { "the warm vein", "the steaming pool", "the earth's breath", "the thaw", "the kind water" };
+        private static readonly string[] HollowLogNames =
+            { "the old fallen one", "the hollow giant", "the den-log", "the tumbled pine" };
+        private static readonly string[] RainbowGroveNames =
+            { "where light lives", "the prism hollow", "the rainbow heart", "the color-well" };
 
         public static WorldData Generate(WorldConfig config)
         {
@@ -432,6 +448,17 @@ namespace Solace.Core
 
             // 10. Overlook.
             w.Pois.Add(PlaceOverlook(w, rng, den));
+
+            // 10b. Crystal caves, hot springs, hollow logs.
+            foreach (var c in PlaceCrystalCaves(w, rng, den))
+                w.Pois.Add(c);
+            foreach (var s in PlaceHotSprings(w, rng))
+                w.Pois.Add(s);
+            foreach (var l in PlaceHollowLogs(w, rng, den))
+                w.Pois.Add(l);
+            // 10c. SECRET: the rainbow grove (~1% of worlds).
+            foreach (var g in PlaceRainbowGrove(w, rng, den))
+                w.Pois.Add(g);
 
             // 11. Spawn: at the den edge, on dry land.
             w.SpawnPoint = FindLandNear(w, den.X + 14f, den.Z + 8f);
@@ -819,6 +846,126 @@ namespace Solace.Core
                 if (score > best) { best = score; ox = x; oz = z; }
             }
             return NewPoi(PoiType.Overlook, "the high view", ox, oz, 8f);
+        }
+
+        private static List<PointOfInterest> PlaceCrystalCaves(WorldData w, SeededRandom rng, PointOfInterest den)
+        {
+            var list = new List<PointOfInterest>();
+            // Crystal caves grow in rocky high ground — score by height + crag.
+            int target = 2;
+            int guard = 0;
+            while (list.Count < target && guard++ < 300)
+            {
+                float x = rng.NextFloat(-w.HalfSize + 40f, w.HalfSize - 40f);
+                float z = rng.NextFloat(-w.HalfSize + 40f, w.HalfSize - 40f);
+                float h = w.SampleHeight(x, z);
+                if (h < 14f || h > 40f) continue;      // rocky mid-high ground
+                if (w.SlopeAt(x, z) > 0.55f) continue;
+                float dx = x - den.X, dz = z - den.Z;
+                float dh = dx * dx + dz * dz;
+                if (dh < 70f * 70f) continue;           // not too close to home
+                bool tooClose = false;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    float ddx = x - list[i].X, ddz = z - list[i].Z;
+                    if (ddx * ddx + ddz * ddz < 120f * 120f) { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+                string n = rng.Pick(CrystalCaveNames);
+                list.Add(NewPoi(PoiType.CrystalCave, n, x, z, 9f));
+            }
+            return list;
+        }
+
+        private static List<PointOfInterest> PlaceHotSprings(WorldData w, SeededRandom rng)
+        {
+            var list = new List<PointOfInterest>();
+            // Hot springs bubble up near water — geothermal veins by the river/loch.
+            int target = 2;
+            int guard = 0;
+            while (list.Count < target && guard++ < 300)
+            {
+                int ri = rng.NextInt(0, w.RiverPath.Count);
+                V2 rp = w.RiverPath[ri];
+                float ang = rng.NextFloat(0f, MathF.PI * 2f);
+                float dist = rng.NextFloat(8f, 26f);
+                float x = rp.X + MathF.Cos(ang) * dist;
+                float z = rp.Z + MathF.Sin(ang) * dist;
+                if (Math.Abs(x) > w.HalfSize - 20f || Math.Abs(z) > w.HalfSize - 20f) continue;
+                if (w.IsWater(x, z)) continue;
+                float h = w.SampleHeight(x, z);
+                if (h < WorldData.WaterLevel + 0.6f || h > 20f) continue;
+                if (w.SlopeAt(x, z) > 0.4f) continue;
+                bool tooClose = false;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    float ddx = x - list[i].X, ddz = z - list[i].Z;
+                    if (ddx * ddx + ddz * ddz < 100f * 100f) { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+                V2 p = FindLandNear(w, x, z);
+                string n = rng.Pick(HotSpringNames);
+                list.Add(NewPoi(PoiType.HotSpring, n, p.X, p.Z, 7f));
+            }
+            return list;
+        }
+
+        private static List<PointOfInterest> PlaceHollowLogs(WorldData w, SeededRandom rng, PointOfInterest den)
+        {
+            var list = new List<PointOfInterest>();
+            // Fallen giants in the foxpine woods — low, moist, forested ground.
+            int target = 3;
+            int guard = 0;
+            while (list.Count < target && guard++ < 300)
+            {
+                float x = rng.NextFloat(-w.HalfSize + 30f, w.HalfSize - 30f);
+                float z = rng.NextFloat(-w.HalfSize + 30f, w.HalfSize - 30f);
+                float h = w.SampleHeight(x, z);
+                if (h < WorldData.WaterLevel + 0.8f || h > 26f) continue;
+                if (w.SlopeAt(x, z) > 0.45f) continue;
+                float m = w.SampleMoisture(x, z);
+                if (m < 0.45f) continue;               // pines like it damp
+                float dx = x - den.X, dz = z - den.Z;
+                float dh = dx * dx + dz * dz;
+                if (dh > 200f * 200f) continue;        // within the home range
+                bool tooClose = false;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    float ddx = x - list[i].X, ddz = z - list[i].Z;
+                    if (ddx * ddx + ddz * ddz < 40f * 40f) { tooClose = true; break; }
+                }
+                if (tooClose) continue;
+                string n = rng.Pick(HollowLogNames);
+                list.Add(NewPoi(PoiType.HollowLog, n, x, z, 6f));
+            }
+            return list;
+        }
+
+        private static List<PointOfInterest> PlaceRainbowGrove(WorldData w, SeededRandom rng, PointOfInterest den)
+        {
+            var list = new List<PointOfInterest>();
+            // SECRET: ~1% of worlds grow a hidden rainbow grove. Deep in the
+            // foxpine woods, far from the den, on a quiet rise — the kind of
+            // place you only find if you wander for the love of wandering.
+            if (rng.NextFloat() >= 0.01f) return list;
+            int guard = 0;
+            while (guard++ < 400)
+            {
+                float x = rng.NextFloat(-w.HalfSize + 40f, w.HalfSize - 40f);
+                float z = rng.NextFloat(-w.HalfSize + 40f, w.HalfSize - 40f);
+                float h = w.SampleHeight(x, z);
+                if (h < 8f || h > 30f) continue;           // forested mid-ground
+                if (w.SlopeAt(x, z) > 0.4f) continue;
+                if (w.SampleMoisture(x, z) < 0.5f) continue; // deep damp woods
+                float dx = x - den.X, dz = z - den.Z;
+                float dh = dx * dx + dz * dz;
+                if (dh < 150f * 150f) continue;            // far from home
+                if (w.IsWater(x, z)) continue;
+                string n = rng.Pick(RainbowGroveNames);
+                list.Add(NewPoi(PoiType.RainbowGrove, n, x, z, 10f));
+                break; // only ever one
+            }
+            return list;
         }
 
         /// <summary>Snaps a point to nearby dry, walkable land (spiral search).</summary>

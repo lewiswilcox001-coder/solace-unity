@@ -420,6 +420,13 @@ namespace Solace.Core
             return def;
         }
 
+        public static double GetDouble(JsonObject o, string key, double def)
+        {
+            JsonValue v;
+            if (o.TryGet(key, out v) && !v.IsNull) return ((JsonNumber)v).AsDouble();
+            return def;
+        }
+
         public static bool GetBool(JsonObject o, string key, bool def)
         {
             JsonValue v;
