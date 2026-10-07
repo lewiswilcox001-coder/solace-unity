@@ -344,7 +344,7 @@ namespace Solace.Unity
                 float a = rng.NextFloat(0f, Tau);
                 float d = rng.NextFloat(0f, r * 0.6f);
                 var tp = new Vector3(Mathf.Cos(a) * d, 1.2f, Mathf.Sin(a) * d);
-                MeshFactory.AddMesh(root.gameObject, "Tree" + i, MeshFactory.PineCrown(), leaf,
+                MeshFactory.AddMesh(root.gameObject, "Tree" + i, MeshFactory.SoftCrown(), leaf,
                     tp, Vector3.one * 1.6f, Quaternion.Euler(0f, rng.NextFloat(0f, 360f), 0f));
                 MeshFactory.AddMesh(root.gameObject, "Trunk" + i,
                     MeshFactory.GetPrimitive(PrimitiveType.Cylinder),

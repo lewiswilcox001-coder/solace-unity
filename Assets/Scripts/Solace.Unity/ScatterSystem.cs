@@ -126,9 +126,9 @@ namespace Solace.Unity
 
             AddVariant(MeshFactory.GetPrimitive(PrimitiveType.Cylinder),
                        MaterialFactory.Lit(new Color(0.23f, 0.15f, 0.10f), 0.25f), trunk, world, grid);
-            AddVariant(MeshFactory.PineCrown(),
+            AddVariant(MeshFactory.SoftCrown(),
                        MaterialFactory.Lit(new Color(0.10f, 0.24f, 0.17f), 0.20f), crown, world, grid);
-            AddVariant(MeshFactory.FacetedRock(),
+            AddVariant(MeshFactory.SmoothRock(),
                        MaterialFactory.Lit(new Color(0.38f, 0.38f, 0.41f), 0.35f), rock, world, grid);
             AddVariant(MeshFactory.GrassTuft(),
                        MaterialFactory.Lit(new Color(0.30f, 0.42f, 0.21f), 0.25f), grass, world, grid);

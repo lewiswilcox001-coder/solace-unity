@@ -263,7 +263,8 @@ namespace Solace.Unity
                 // they read as individuals, not clones of the protagonist.
                 float h1 = ViewMotion.Frac(BoundId * 0.6180339f);
                 float h2 = ViewMotion.Frac(BoundId * 0.3819660f + 0.5f);
-                _rig = FoxRig.Build(transform, 0.92f + 0.07f * h1);
+                _rig = FoxRig.Build(transform, 0.92f + 0.07f * h1,
+                                        FoxRig.HatchVariant.Kindred, (h2 - 0.5f) * 1.2f);
                 if (_rig != null)
                 {
                     _anim = _rig.Root.GetComponent<FoxAnimator>();
@@ -322,7 +323,7 @@ namespace Solace.Unity
             {
                 _built = true;
                 float h = ViewMotion.Frac(BoundId * 0.7548777f + 0.25f);
-                _rig = FoxRig.Build(transform, 0.52f + 0.07f * h); // littermates vary
+                _rig = FoxRig.Build(transform, 0.52f + 0.07f * h, FoxRig.HatchVariant.Kit); // littermates vary
                 _rng = new System.Random(BoundId * 7919 + 13);
                 if (_rig != null)
                 {
@@ -665,15 +666,22 @@ namespace Solace.Unity
 
         private void BuildBody()
         {
-            var coat = MaterialFactory.Lit(new Color(0.52f, 0.40f, 0.27f), 0.3f);
-            var dark = MaterialFactory.Lit(new Color(0.33f, 0.25f, 0.16f), 0.3f);
+            // Per-deer Hatch tint: warm cream ↔ soft gray, deterministic per deer.
+            float th = ViewMotion.Frac(BoundId * 0.372081f + 0.11f) * 2f - 1f;
+            Color coatC = th > 0f
+                ? Color.Lerp(new Color(0.93f, 0.87f, 0.75f), new Color(0.95f, 0.82f, 0.63f), th)
+                : Color.Lerp(new Color(0.93f, 0.87f, 0.75f), new Color(0.80f, 0.79f, 0.77f), -th);
+            var coat = MaterialFactory.Lit(coatC, 0.35f);
+            var dark = MaterialFactory.Lit(coatC * 0.82f, 0.35f);
+            var plate = MaterialFactory.Lit(new Color(0.98f, 0.945f, 0.855f), 0.35f);
+            var eyeGloss = MaterialFactory.Lit(new Color(0.035f, 0.030f, 0.040f), 0.9f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
             var cyl = MeshFactory.GetPrimitive(PrimitiveType.Cylinder);
 
             var body = new GameObject("Body");
             _body = body;
             body.transform.SetParent(transform, false);
-            // --- merged body shell: torso + rump (rigid relative to _body) ---
+            // --- merged body shell: two round plush blobs ---
             // Slot 0 = coat, slot 1 = dark. 2 parts -> 1 draw call x2.
             {
                 var meshes = new List<Mesh> { sphere, sphere };
@@ -684,30 +692,30 @@ namespace Solace.Unity
                 };
                 var scls = new List<Vector3>
                 {
-                    new Vector3(0.85f, 0.95f, 1.55f),
-                    new Vector3(0.7f, 0.8f, 0.7f),
+                    new Vector3(0.95f, 1.0f, 1.6f),
+                    new Vector3(0.78f, 0.85f, 0.75f),
                 };
                 var rots = new List<Quaternion> { Quaternion.identity, Quaternion.identity };
                 var slots = new List<int> { 0, 1 };
                 MergedStatic(body, "BodyShell", new[] { coat, dark },
                              meshes, poss, scls, rots, slots);
             }
-            _tail = Part(body, "Tail", sphere, dark, new Vector3(0f, 1.45f, -1.55f),
+            _tail = Part(body, "Tail", sphere, plate, new Vector3(0f, 1.45f, -1.55f),
                  Vector3.one * 0.28f, Quaternion.identity);
             // Legs (kept for walk / stot gaits).
             _legFL = Part(body, "LegFL", cyl, dark, new Vector3(-0.30f, 0.55f, 0.62f),
-                 new Vector3(0.20f, 1.15f, 0.20f), Quaternion.identity);
+                 new Vector3(0.22f, 1.15f, 0.22f), Quaternion.identity);
             _legFR = Part(body, "LegFR", cyl, dark, new Vector3(0.30f, 0.55f, 0.62f),
-                 new Vector3(0.20f, 1.15f, 0.20f), Quaternion.identity);
+                 new Vector3(0.22f, 1.15f, 0.22f), Quaternion.identity);
             _legBL = Part(body, "LegBL", cyl, dark, new Vector3(-0.30f, 0.55f, -0.62f),
-                 new Vector3(0.22f, 1.15f, 0.22f), Quaternion.identity);
+                 new Vector3(0.24f, 1.15f, 0.24f), Quaternion.identity);
             _legBR = Part(body, "LegBR", cyl, dark, new Vector3(0.30f, 0.55f, -0.62f),
-                 new Vector3(0.22f, 1.15f, 0.22f), Quaternion.identity);
+                 new Vector3(0.24f, 1.15f, 0.24f), Quaternion.identity);
             // Head on a pivot for grazing.
             _headPivot = new GameObject("HeadPivot");
             _headPivot.transform.SetParent(body.transform, false);
             _headPivot.transform.localPosition = new Vector3(0f, 1.55f, 0.95f);
-            // --- merged head: neck + skull (rigid relative to the pivot) ---
+            // --- merged head: neck + round skull (rigid relative to the pivot) ---
             // Both coat. 2 parts -> 1 draw call.
             {
                 var meshes = new List<Mesh> { cyl, sphere };
@@ -718,8 +726,8 @@ namespace Solace.Unity
                 };
                 var scls = new List<Vector3>
                 {
-                    new Vector3(0.34f, 0.9f, 0.34f),
-                    new Vector3(0.42f, 0.5f, 0.72f),
+                    new Vector3(0.36f, 0.9f, 0.36f),
+                    new Vector3(0.48f, 0.52f, 0.55f),
                 };
                 var rots = new List<Quaternion>
                 {
@@ -730,9 +738,16 @@ namespace Solace.Unity
                 MergedStatic(_headPivot, "HeadMerged", new[] { coat },
                              meshes, poss, scls, rots, slots);
             }
-            _earL = Part(_headPivot, "EarL", MeshFactory.Cone(0.10f, 0.34f, 5), dark,
+            // Hatch face on the head pivot (follows graze dips + look-arounds).
+            Part(_headPivot, "FacePlate", sphere, plate, new Vector3(0f, 0.72f, 0.78f),
+                 new Vector3(0.34f, 0.28f, 0.18f), Quaternion.identity);
+            Part(_headPivot, "EyeL", sphere, eyeGloss, new Vector3(-0.17f, 0.86f, 0.82f),
+                 Vector3.one * 0.11f, Quaternion.identity);
+            Part(_headPivot, "EyeR", sphere, eyeGloss, new Vector3(0.17f, 0.86f, 0.82f),
+                 Vector3.one * 0.11f, Quaternion.identity);
+            _earL = Part(_headPivot, "EarL", MeshFactory.Cone(0.10f, 0.34f, 5), coat,
                  new Vector3(-0.20f, 1.02f, 0.30f), Vector3.one, Quaternion.Euler(-14f, 0f, -18f));
-            _earR = Part(_headPivot, "EarR", MeshFactory.Cone(0.10f, 0.34f, 5), dark,
+            _earR = Part(_headPivot, "EarR", MeshFactory.Cone(0.10f, 0.34f, 5), coat,
                  new Vector3(0.20f, 1.02f, 0.30f), Vector3.one, Quaternion.Euler(-14f, 0f, 18f));
         }
     }
@@ -760,8 +775,11 @@ namespace Solace.Unity
         {
             _body = new GameObject("Body");
             _body.transform.SetParent(transform, false);
-            var fur = MaterialFactory.Lit(new Color(0.46f, 0.38f, 0.29f), 0.3f);
-            var inner = MaterialFactory.Lit(new Color(0.66f, 0.57f, 0.45f), 0.3f);
+            // Hatch-bunny: round cream plush, long ears, glossy Hatch eyes.
+            var fur = MaterialFactory.Lit(new Color(0.94f, 0.88f, 0.76f), 0.35f);
+            var inner = MaterialFactory.Lit(new Color(0.97f, 0.70f, 0.68f), 0.35f);
+            var plate = MaterialFactory.Lit(new Color(0.98f, 0.945f, 0.855f), 0.35f);
+            var eyeGloss = MaterialFactory.Lit(new Color(0.035f, 0.030f, 0.040f), 0.9f);
             var sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
 
             // --- merged whole rabbit: every part is rigid relative to _body ---
@@ -786,11 +804,11 @@ namespace Solace.Unity
                 };
                 var scls = new List<Vector3>
                 {
-                    new Vector3(0.52f, 0.48f, 0.68f),
-                    Vector3.one * 0.42f,
+                    new Vector3(0.56f, 0.52f, 0.72f),
+                    Vector3.one * 0.46f,
                     Vector3.one,
                     Vector3.one,
-                    Vector3.one * 0.20f,
+                    Vector3.one * 0.22f,
                 };
                 var rots = new List<Quaternion>
                 {
@@ -802,6 +820,14 @@ namespace Solace.Unity
                 MergedStatic(_body, "RabbitMerged", new[] { fur, inner },
                              meshes, poss, scls, rots, slots);
             }
+            // Hatch face on the head (front of the head sphere at z≈0.52).
+            var faceParent = _body;
+            Part(faceParent, "FacePlate", sphere, plate, new Vector3(0f, 0.55f, 0.88f),
+                 new Vector3(0.30f, 0.24f, 0.15f), Quaternion.identity);
+            Part(faceParent, "EyeL", sphere, eyeGloss, new Vector3(-0.13f, 0.64f, 0.90f),
+                 Vector3.one * 0.09f, Quaternion.identity);
+            Part(faceParent, "EyeR", sphere, eyeGloss, new Vector3(0.13f, 0.64f, 0.90f),
+                 Vector3.one * 0.09f, Quaternion.identity);
         }
     }
 }

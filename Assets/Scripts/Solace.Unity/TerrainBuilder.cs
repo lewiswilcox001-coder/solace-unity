@@ -1,12 +1,14 @@
 // Solace.Unity — terrain and water, generated from WorldData.
 //
-// The terrain is one mesh with 36 submeshes (6 biomes × 3 height bands ×
-// 2 shade variants), flat-shaded via duplicated vertices. Each biome owns a
-// hand-picked 3-stop color ramp (lowland → rolling → alpine) so mountains
-// read as deliberate gradient art, not random noise. One opaque matte
-// material per submesh — no vertex colors, no custom shaders. Built at half
-// the sim resolution (8m cells): chunky facets suit the poly-art look and
-// keep the vertex count at ~16k.
+// The terrain is ONE mesh with SHARED vertices and SMOOTH normals — soft,
+// "A Short Hike"-style low-poly shading instead of crystalline facets.
+// Color comes from 36 curated materials (6 biomes × 6 height bands): the
+// finer band quantization (vs the old 3) makes altitude gradients read as
+// soft blends, and the harsh shade-variant checkerboard is gone. One opaque
+// matte material per bucket — no vertex colors (URP Lit ignores them), no
+// custom shaders. Seasons swap the 36 materials for re-tinted versions.
+// Built at half the sim resolution (8m cells): 65×65 shared verts (~4k,
+// down from ~16k duplicated).
 //
 // Water: a faceted ribbon along RiverPath + a disc at LakeCenter, drawn at a
 // fixed level with a slight per-facet height jitter so it sparkles. At night
@@ -27,6 +29,7 @@ namespace Solace.Unity
 
         private Material _waterMat;
         private MeshRenderer _terrainRenderer; // stored so seasons can re-tint the palette
+        private Color[] _bucketColors;         // 36 curated colors, re-tinted per season
         private static readonly Color WaterDay = new Color(0.10f, 0.28f, 0.34f);
         private static readonly Color WaterGlow = new Color(0.14f, 0.72f, 0.66f);
 
@@ -72,68 +75,41 @@ namespace Solace.Unity
         {
             float half = world.HalfSize;
             float step = world.SizeMeters / GridRes;
-            const int Buckets = 36; // 6 biomes × 3 height bands × 2 shade variants
+            int n = GridRes + 1; // shared grid verts per side
+            const int Bands = 6;
+            const int Buckets = 6 * Bands; // 6 biomes × 6 height bands
 
-            var verts = new List<Vector3>[Buckets];
+            _bucketColors = BuildBucketColors();
+
+            var verts = new Vector3[n * n];
+            for (int gz = 0; gz < n; gz++)
+                for (int gx = 0; gx < n; gx++)
+                    verts[gz * n + gx] = new Vector3(-half + gx * step, world.SampleHeight(-half + gx * step, -half + gz * step), -half + gz * step);
+
+            // Per-bucket triangle lists over the SHARED vertex buffer, so
+            // RecalculateNormals averages across bucket boundaries → smooth.
+            // Winding matches the old per-quad build (upward-facing).
             var tris = new List<int>[Buckets];
-            for (int i = 0; i < Buckets; i++) { verts[i] = new List<Vector3>(); tris[i] = new List<int>(); }
-
-            for (int cx = 0; cx < GridRes; cx++)
+            for (int i = 0; i < Buckets; i++) tris[i] = new List<int>();
+            for (int cz = 0; cz < GridRes; cz++)
             {
-                for (int cz = 0; cz < GridRes; cz++)
+                for (int cx = 0; cx < GridRes; cx++)
                 {
-                    float x0 = -half + cx * step;
-                    float x1 = x0 + step;
-                    float z0 = -half + cz * step;
-                    float z1 = z0 + step;
-                    float xc = (x0 + x1) * 0.5f;
-                    float zc = (z0 + z1) * 0.5f;
-
-                    float h00 = world.SampleHeight(x0, z0);
-                    float h10 = world.SampleHeight(x1, z0);
-                    float h11 = world.SampleHeight(x1, z1);
-                    float h01 = world.SampleHeight(x0, z1);
-                    float hAvg = (h00 + h10 + h11 + h01) * 0.25f;
-                    int band = hAvg < BandLowMax ? 0 : (hAvg < BandMidMax ? 1 : 2);
-
-                    Biome biome = world.GetBiome(xc, zc);
-                    int shade = ((cx * 73 + cz * 149) & 1);
-                    int bucket = ((int)biome * 3 + band) * 2 + shade;
-
-                    int b = verts[bucket].Count;
-                    verts[bucket].Add(new Vector3(x0, h00, z0));
-                    verts[bucket].Add(new Vector3(x1, h10, z0));
-                    verts[bucket].Add(new Vector3(x1, h11, z1));
-                    verts[bucket].Add(new Vector3(x0, h01, z1));
-                    tris[bucket].Add(b); tris[bucket].Add(b + 2); tris[bucket].Add(b + 1);
-                    tris[bucket].Add(b); tris[bucket].Add(b + 3); tris[bucket].Add(b + 2);
+                    int b = cz * n + cx;
+                    float xc = -half + (cx + 0.5f) * step;
+                    float zc = -half + (cz + 0.5f) * step;
+                    float hAvg = (verts[b].y + verts[b + 1].y + verts[b + n].y + verts[b + n + 1].y) * 0.25f;
+                    int bucket = (int)world.GetBiome(xc, zc) * Bands + HeightBand(hAvg);
+                    tris[bucket].Add(b); tris[bucket].Add(b + n + 1); tris[bucket].Add(b + 1);
+                    tris[bucket].Add(b); tris[bucket].Add(b + n); tris[bucket].Add(b + n + 1);
                 }
             }
 
             var mesh = new Mesh();
             mesh.subMeshCount = Buckets;
-            var allVerts = new List<Vector3>();
-            var allTris = new List<int>();
-            var materials = new Material[Buckets];
-            for (int i = 0; i < Buckets; i++)
-            {
-                int base_ = allVerts.Count;
-                allVerts.AddRange(verts[i]);
-                for (int t = 0; t < tris[i].Count; t++) allTris.Add(base_ + tris[i][t]);
-                Color c = BiomeRamps[i / 2] * (i % 2 == 0 ? 1f : 0.92f);
-                materials[i] = MaterialFactory.Lit(c, 0.12f); // matte earth, never glossy
-            }
-            mesh.SetVertices(allVerts);
-            // Per-submesh triangle ranges over the concatenated index list.
-            int cursor = 0;
-            for (int i = 0; i < Buckets; i++)
-            {
-                var sub = new List<int>();
-                for (int t = 0; t < tris[i].Count; t++) sub.Add(allTris[cursor + t]);
-                cursor += tris[i].Count;
-                mesh.SetTriangles(sub, i);
-            }
-            mesh.RecalculateNormals();
+            mesh.SetVertices(verts);
+            for (int i = 0; i < Buckets; i++) mesh.SetTriangles(tris[i], i);
+            mesh.RecalculateNormals(); // shared verts → smooth soft shading
             mesh.RecalculateBounds();
 
             var go = new GameObject("Terrain");
@@ -141,9 +117,50 @@ namespace Solace.Unity
             var filter = go.AddComponent<MeshFilter>();
             filter.sharedMesh = mesh;
             var renderer = go.AddComponent<MeshRenderer>();
+            var materials = new Material[Buckets];
+            for (int i = 0; i < Buckets; i++)
+                materials[i] = MaterialFactory.Lit(_bucketColors[i], 0.12f); // matte earth, never glossy
             renderer.sharedMaterials = materials;
             renderer.receiveShadows = true;
             _terrainRenderer = renderer; // seasons re-tint via ApplySeasonTint
+        }
+
+        // Six altitude bands (meters). Finer than the old 3-stop bands so
+        // mountainsides read as soft gradients, not hard stripes.
+        private static int HeightBand(float h)
+        {
+            if (h < 8f) return 0;
+            if (h < 16f) return 1;
+            if (h < 26f) return 2;
+            if (h < 38f) return 3;
+            if (h < 52f) return 4;
+            return 5;
+        }
+
+        /// <summary>
+        /// The 36 bucket colors: each biome's hand-curated 3-stop ramp sampled
+        /// as a continuous piecewise-linear function at the six band centers,
+        /// so adjacent bands are close in color — gradual blends, no stripes.
+        /// </summary>
+        private Color[] BuildBucketColors()
+        {
+            float[] centers = { 4f, 12f, 21f, 32f, 45f, 60f };
+            var colors = new Color[36];
+            for (int bi = 0; bi < 6; bi++)
+                for (int b = 0; b < 6; b++)
+                    colors[bi * 6 + b] = SampleRamp(bi, centers[b]);
+            return colors;
+        }
+
+        /// <summary>Continuous color along a biome's 3-stop ramp at height h.</summary>
+        private Color SampleRamp(int biome, float h)
+        {
+            Color c0 = BiomeRamps[biome * 3];
+            Color c1 = BiomeRamps[biome * 3 + 1];
+            Color c2 = BiomeRamps[biome * 3 + 2];
+            if (h <= BandLowMax) return c0;
+            if (h >= BandMidMax) return Color.Lerp(c1, c2, Mathf.Clamp01((h - BandMidMax) / 26f));
+            return Color.Lerp(c0, c1, (h - BandLowMax) / (BandMidMax - BandLowMax));
         }
 
         private void BuildWater(WorldData world)
@@ -225,21 +242,19 @@ namespace Solace.Unity
         }
 
         /// <summary>
-        /// Re-hues the whole terrain for a season. Swaps the 36 bucket
+        /// <summary>
+        /// Re-hues the whole terrain for a season: swaps the 36 bucket
         /// materials for season-tinted versions (cached in MaterialFactory,
         /// so repeated turns are cheap) and re-tints the owned water material.
         /// Called by SeasonView on season change.
         /// </summary>
         public void ApplySeasonTint(Season season)
         {
-            if (_terrainRenderer != null)
+            if (_terrainRenderer != null && _bucketColors != null)
             {
                 var mats = new Material[36];
                 for (int i = 0; i < 36; i++)
-                {
-                    Color base_ = BiomeRamps[i / 2] * (i % 2 == 0 ? 1f : 0.92f);
-                    mats[i] = MaterialFactory.Lit(SeasonPalette.TintTerrain(base_, season), 0.12f);
-                }
+                    mats[i] = MaterialFactory.Lit(SeasonPalette.TintTerrain(_bucketColors[i], season), 0.12f);
                 _terrainRenderer.sharedMaterials = mats;
             }
             if (_waterMat != null)

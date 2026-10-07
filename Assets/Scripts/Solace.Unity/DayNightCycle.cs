@@ -14,6 +14,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
+using UnityEngine.Rendering.Universal;
 using Solace.Core;
 
 namespace Solace.Unity
@@ -97,8 +98,6 @@ namespace Solace.Unity
         private static readonly Color FogDay = new Color(0.60f, 0.67f, 0.74f);
         private static readonly Color FogNight = new Color(0.030f, 0.045f, 0.095f);
         private static readonly Color FogDusk = new Color(0.95f, 0.62f, 0.38f); // golden-hour glow on the mist
-        private static readonly Color AmbDay = new Color(0.46f, 0.51f, 0.57f);
-        private static readonly Color AmbNight = new Color(0.065f, 0.095f, 0.155f);
 
         public void Build(WorldData world)
         {
@@ -127,9 +126,16 @@ namespace Solace.Unity
             _fill.color = new Color(0.50f, 0.60f, 0.78f);
             _fill.shadows = LightShadows.None;
 
-            RenderSettings.ambientMode = AmbientMode.Flat;
+            // Soft luminous grade: trilight ambient (sky tint above, warm earth
+            // bounce below) gives the low-poly geometry gentle depth for free.
+            // Linear fog is art-directable: terrain melts into the sky horizon
+            // with no seam, and misty moods just pull the range closer.
+            RenderSettings.ambientMode = AmbientMode.Trilight;
+            RenderSettings.ambientIntensity = 1.0f;
             RenderSettings.fog = true;
-            RenderSettings.fogMode = FogMode.ExponentialSquared;
+            RenderSettings.fogMode = FogMode.Linear;
+            RenderSettings.fogStartDistance = 120f;
+            RenderSettings.fogEndDistance = 700f;
 
             BuildSky(world);
             BuildStars(world);
@@ -137,6 +143,7 @@ namespace Solace.Unity
             BuildMeteors();
             BuildFireflies(world);
             BuildRain();
+            BuildSoftGrade();
         }
 
         public void SyncFromState(GameState state)
@@ -239,23 +246,44 @@ namespace Solace.Unity
             if (_starRoot != null) _starRoot.gameObject.SetActive(night);
 
             // -- fog / ambient ------------------------------------------------------------
-            // Golden-hour glow: the mist itself goes warm at dusk.
-            Color fogC = night ? FogNight : Color.Lerp(FogDay, FogDusk, edge * 0.85f);
+            // Fog color tracks the sky horizon: terrain dissolves into the sky
+            // with no seam. Golden hour warms the mist itself.
+            Color fogBase = night ? FogNight : Color.Lerp(FogDay, FogDusk, edge * 0.85f);
+            Color fogC = Color.Lerp(fogBase, hor, 0.5f); // pull toward horizon
             if (storm) fogC = Color.Lerp(fogC, new Color(0.35f, 0.38f, 0.45f), 0.7f);
             if (flicker > 0f) fogC = Color.Lerp(fogC, new Color(0.72f, 0.78f, 0.95f), flicker * 0.55f);
             RenderSettings.fogColor = fogC;
-            // Fog is the cheapest depth cue we have — lean into it.
-            float density = night ? 0.0042f : 0.0026f;
-            density += edge * 0.0016f; // dawn/dusk mist
-            if (state.Weather == Weather.Rain) density += 0.0022f;
-            if (storm) density += 0.0045f;
-            if (state.Weather == Weather.Cloudy) density += 0.0008f;
-            RenderSettings.fogDensity = density;
+            // Linear fog: misty moods pull the haze range closer — dawn/dusk
+            // valleys, rain, and storms all feel closer and softer.
+            float mist = edge * 0.25f;
+            if (night) mist += 0.15f;
+            if (state.Weather == Weather.Rain) mist += 0.30f;
+            if (storm) mist += 0.45f;
+            if (state.Weather == Weather.Cloudy) mist += 0.10f;
+            mist = Mathf.Clamp01(mist);
+            RenderSettings.fogStartDistance = Mathf.Lerp(120f, 45f, mist);
+            RenderSettings.fogEndDistance = Mathf.Lerp(700f, 260f, mist);
 
-            Color amb = night ? AmbNight : Color.Lerp(AmbDay, new Color(0.52f, 0.40f, 0.32f), edge * 0.65f);
-            if (storm) amb = Color.Lerp(amb, new Color(0.20f, 0.22f, 0.28f), 0.6f);
-            if (flicker > 0f) amb += new Color(0.65f, 0.70f, 0.88f) * flicker * 1.1f;
-            RenderSettings.ambientLight = amb;
+            // Trilight ambient: sky tint from above, warm earth bounce from
+            // below. This is what makes sunlit meadows glow softly instead of
+            // shading flat.
+            Color skyAmb = night ? NightHor : Color.Lerp(DayHor, DuskHor, edge);
+            Color eqAmb = night ? NightHor * 0.8f : Color.Lerp(DayHor, DuskHor, edge * 0.6f);
+            Color gndAmb = night ? new Color(0.045f, 0.050f, 0.070f)
+                : Color.Lerp(new Color(0.32f, 0.28f, 0.22f), new Color(0.42f, 0.28f, 0.18f), edge * 0.6f);
+            if (storm)
+            {
+                skyAmb = Color.Lerp(skyAmb, new Color(0.20f, 0.22f, 0.28f), 0.6f);
+                eqAmb = Color.Lerp(eqAmb, new Color(0.24f, 0.26f, 0.32f), 0.6f);
+            }
+            if (flicker > 0f)
+            {
+                Color fl = new Color(0.65f, 0.70f, 0.88f) * flicker * 1.1f;
+                skyAmb += fl; eqAmb += fl * 0.7f;
+            }
+            RenderSettings.ambientSkyColor = skyAmb;
+            RenderSettings.ambientEquatorColor = eqAmb;
+            RenderSettings.ambientGroundColor = gndAmb;
 
             // -- clouds ---------------------------------------------------------------------
             UpdateClouds(state, cp, dt, edge, night, storm, flicker, sunDir, moonDir);
@@ -543,7 +571,7 @@ namespace Solace.Unity
 
         private static Mesh BuildCloudPuff(SeededRandom rng)
         {
-            var rock = MeshFactory.FacetedRock();
+            var rock = MeshFactory.SmoothRock();
             var meshes = new List<Mesh>();
             var xforms = new List<Matrix4x4>();
             int blobs = 6;
@@ -686,6 +714,46 @@ namespace Solace.Unity
             // Thin vertical streaks (opaque): read as rain at speed.
             psr.mesh = MeshFactory.Streak();
             psr.material = MaterialFactory.Lit(new Color(0.60f, 0.70f, 0.80f), 0.4f);
+        }
+
+        // -- soft filmic grade -----------------------------------------------------------
+        // Global post-processing: ACES tonemapping rolls bright highlights off
+        // softly (no harsh "plastic" clipping on sunlit faces), a gentle warm
+        // grade keeps the palette luminous, and a whisper of bloom lets the
+        // fox's chest-core, embers, and sun glow. Built in code so the
+        // procedural world needs no scene assets.
+        private void BuildSoftGrade()
+        {
+            try
+            {
+                var volGO = new GameObject("SoftGradeVolume");
+                volGO.transform.SetParent(transform, false);
+                var volume = volGO.AddComponent<Volume>();
+                volume.isGlobal = true;
+                volume.priority = 10f;
+                var profile = ScriptableObject.CreateInstance<VolumeProfile>();
+                volume.profile = profile;
+
+                var tonemap = profile.Add<Tonemapping>(true);
+                tonemap.mode.value = TonemappingMode.ACES;
+
+                var grade = profile.Add<ColorAdjustments>(true);
+                grade.saturation.value = 8f;   // slight vibrancy, not cartoonish
+                grade.contrast.value = 10f;
+                grade.colorFilter.value = new Color(1.0f, 0.98f, 0.94f); // warm filter
+
+                var bloom = profile.Add<Bloom>(true);
+                bloom.threshold.value = 1.0f;
+                bloom.intensity.value = 0.35f; // whisper — glows, never hazes
+
+                var camData = _cam.GetComponent<UniversalAdditionalCameraData>();
+                if (camData == null) camData = _cam.gameObject.AddComponent<UniversalAdditionalCameraData>();
+                camData.renderPostProcessing = true;
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("[Solace] SoftGrade volume unavailable: " + e.Message);
+            }
         }
 
         private static void SetEmission(ParticleSystem ps, float rate)

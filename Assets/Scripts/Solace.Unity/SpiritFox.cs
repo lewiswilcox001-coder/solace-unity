@@ -59,23 +59,24 @@ namespace Solace.Unity
         private void BuildGhost(GameObject root)
         {
             Mesh sphere = MeshFactory.GetPrimitive(PrimitiveType.Sphere);
-            // Body: long low ghost-fox.
+            // Body: round plush ghost-fox, softer and rounder than the living fox.
             AddPart(root, "Body", sphere, _ghostMat,
-                new Vector3(0f, 0.62f, 0f), Quaternion.identity, new Vector3(0.55f, 0.5f, 1.15f));
+                new Vector3(0f, 0.62f, 0f), Quaternion.identity, new Vector3(0.62f, 0.58f, 1.15f));
             // Chest slightly raised, head up — the watching pose.
             AddPart(root, "Head", sphere, _ghostMat,
-                new Vector3(0f, 1.05f, 0.72f), Quaternion.identity, new Vector3(0.34f, 0.32f, 0.36f));
-            AddPart(root, "Snout", MeshFactory.Cone(0.11f, 0.3f, 6), _ghostMat,
-                new Vector3(0f, 0.98f, 1.0f), Quaternion.Euler(90f, 0f, 0f), Vector3.one);
-            // Ears.
-            AddPart(root, "EarL", MeshFactory.Cone(0.09f, 0.28f, 5), _ghostMat,
-                new Vector3(-0.13f, 1.32f, 0.66f), Quaternion.Euler(-12f, 0f, -10f), Vector3.one);
-            AddPart(root, "EarR", MeshFactory.Cone(0.09f, 0.28f, 5), _ghostMat,
-                new Vector3(0.13f, 1.32f, 0.66f), Quaternion.Euler(-12f, 0f, 10f), Vector3.one);
-            // Tail: long plume curling up behind.
+                new Vector3(0f, 1.05f, 0.72f), Quaternion.identity, new Vector3(0.40f, 0.38f, 0.40f));
+            // Smooth face plate.
+            AddPart(root, "FacePlate", sphere, _ghostMat,
+                new Vector3(0f, 1.02f, 0.98f), Quaternion.identity, new Vector3(0.30f, 0.24f, 0.14f));
+            // Ears: soft and round.
+            AddPart(root, "EarL", sphere, _ghostMat,
+                new Vector3(-0.16f, 1.38f, 0.66f), Quaternion.identity, new Vector3(0.13f, 0.20f, 0.10f));
+            AddPart(root, "EarR", sphere, _ghostMat,
+                new Vector3(0.16f, 1.38f, 0.66f), Quaternion.identity, new Vector3(0.13f, 0.20f, 0.10f));
+            // Tail: big soft plume curling up behind.
             AddPart(root, "Tail", sphere, _ghostMat,
                 new Vector3(0f, 0.85f, -0.85f), Quaternion.Euler(-35f, 0f, 0f),
-                new Vector3(0.3f, 0.3f, 0.85f));
+                new Vector3(0.36f, 0.36f, 0.90f));
             // Legs: simple, still.
             Mesh leg = MeshFactory.GetPrimitive(PrimitiveType.Cylinder);
             AddPart(root, "LegFL", leg, _ghostMat,
@@ -86,11 +87,11 @@ namespace Solace.Unity
                 new Vector3(-0.18f, 0.28f, -0.42f), Quaternion.identity, new Vector3(0.11f, 0.56f, 0.11f));
             AddPart(root, "LegBR", leg, _ghostMat,
                 new Vector3(0.18f, 0.28f, -0.42f), Quaternion.identity, new Vector3(0.11f, 0.56f, 0.11f));
-            // Star eyes.
+            // Big glowing Hatch eyes — the "evolved" look.
             AddPart(root, "EyeL", sphere, _eyeMat,
-                new Vector3(-0.11f, 1.1f, 0.98f), Quaternion.identity, Vector3.one * 0.055f);
+                new Vector3(-0.12f, 1.10f, 1.02f), Quaternion.identity, Vector3.one * 0.085f);
             AddPart(root, "EyeR", sphere, _eyeMat,
-                new Vector3(0.11f, 1.1f, 0.98f), Quaternion.identity, Vector3.one * 0.055f);
+                new Vector3(0.12f, 1.10f, 1.02f), Quaternion.identity, Vector3.one * 0.085f);
         }
 
         public void SyncFromState(GameState state)

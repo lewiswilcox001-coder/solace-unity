@@ -9,8 +9,11 @@ namespace Solace.Unity
     /// <summary>
     /// All geometry in the presentation layer comes from here. Primitive meshes
     /// are Unity's own shared assets (harvested once and cached); custom meshes
-    /// are built with duplicated vertices so RecalculateNormals yields flat,
-    /// faceted shading.
+    /// are built by hand with correct winding. Two shading families: FLAT
+    /// (duplicated vertices → faceted/crystalline, e.g. FacetedRock, Cone) and
+    /// SMOOTH (shared vertices → soft rounded shading, e.g. SmoothRock,
+    /// SmoothCanopy/SoftCrown). Prefer the smooth family for organic shapes
+    /// (terrain, trees, rocks, clouds); keep flat for crystals and hard props.
     /// </summary>
     public static class MeshFactory
     {
@@ -255,6 +258,156 @@ namespace Solace.Unity
             mesh.RecalculateBounds();
             CustomCache[key] = mesh;
             return mesh;
+        }
+
+        /// <summary>
+        /// A soft rounded rock: the same jittered octahedron silhouette as
+        /// FacetedRock, but with SHARED vertices so RecalculateNormals averages
+        /// them into smooth, "A Short Hike"-style shading. Drop-in replacement
+        /// for FacetedRock wherever rocks should read soft instead of crystalline.
+        /// Origin at vertical center; roughly 1.4 wide, 1.4 tall.
+        /// </summary>
+        public static Mesh SmoothRock()
+        {
+            const string key = "smoothrock";
+            Mesh cached;
+            if (CustomCache.TryGetValue(key, out cached)) return cached;
+
+            // Same hand-jittered points as FacetedRock — identical silhouette.
+            var top = new Vector3(0.06f, 0.85f, -0.04f);
+            var bottom = new Vector3(-0.05f, -0.55f, 0.06f);
+            var ring = new Vector3[]
+            {
+                new Vector3(0.78f, 0.10f, 0.05f),
+                new Vector3(0.02f, -0.14f, 0.66f),
+                new Vector3(-0.85f, 0.16f, -0.08f),
+                new Vector3(-0.06f, -0.06f, -0.72f),
+            };
+            // Shared vertices: 0 = top, 1 = bottom, 2..5 = ring.
+            var verts = new List<Vector3> { top, bottom, ring[0], ring[1], ring[2], ring[3] };
+            var tris = new List<int>(24);
+            for (int s = 0; s < 4; s++)
+            {
+                int r0 = 2 + s, r1 = 2 + (s + 1) % 4;
+                // Top fan — same winding as FacetedRock's top faces.
+                tris.Add(r0); tris.Add(0); tris.Add(r1);
+                // Bottom fan — same winding as FacetedRock's bottom faces.
+                tris.Add(r0); tris.Add(r1); tris.Add(1);
+            }
+            var mesh = new Mesh();
+            mesh.SetVertices(verts);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateNormals(); // shared verts → smooth averaged normals
+            mesh.RecalculateBounds();
+            CustomCache[key] = mesh;
+            return mesh;
+        }
+
+        /// <summary>
+        /// A soft tree-canopy blob: a once-subdivided icosahedron (42 verts,
+        /// 80 tris) with gentle deterministic jitter and shared vertices, so
+        /// RecalculateNormals yields smooth rounded shading. Roughly 2.4 wide,
+        /// 1.9 tall, origin at center. The soft counterpart to Cone-based crowns.
+        /// </summary>
+        public static Mesh SmoothCanopy()
+        {
+            const string key = "smoothcanopy";
+            Mesh cached;
+            if (CustomCache.TryGetValue(key, out cached)) return cached;
+
+            float t = (1f + Mathf.Sqrt(5f)) * 0.5f;
+            var baseVerts = new Vector3[]
+            {
+                new Vector3(-1f,  t, 0f), new Vector3( 1f,  t, 0f),
+                new Vector3(-1f, -t, 0f), new Vector3( 1f, -t, 0f),
+                new Vector3(0f, -1f,  t), new Vector3(0f,  1f,  t),
+                new Vector3(0f, -1f, -t), new Vector3(0f,  1f, -t),
+                new Vector3( t, 0f, -1f), new Vector3( t, 0f,  1f),
+                new Vector3(-t, 0f, -1f), new Vector3(-t, 0f,  1f),
+            };
+            int[] baseTris = new int[]
+            {
+                0,11,5,  0,5,1,  0,1,7,  0,7,10,  0,10,11,
+                1,5,9,  5,11,4,  11,10,2,  10,7,6,  7,1,8,
+                3,9,4,  3,4,2,  3,2,6,  3,6,8,  3,8,9,
+                4,9,5,  2,4,11,  6,2,10,  8,6,7,  9,8,1,
+            };
+
+            // Deterministic gentle jitter so the blob is organic, not a ball.
+            var rng = new System.Random(1234567);
+            var jittered = new Vector3[12];
+            for (int i = 0; i < 12; i++)
+            {
+                Vector3 v = baseVerts[i].normalized;
+                float j = 1f + ((float)rng.NextDouble() - 0.5f) * 0.16f;
+                jittered[i] = v * j;
+            }
+
+            // One subdivision with edge-midpoint welding (shared verts).
+            var verts = new List<Vector3>(jittered);
+            var midCache = new Dictionary<long, int>();
+            var tris = new List<int>(baseTris.Length * 4);
+            for (int f = 0; f < baseTris.Length; f += 3)
+            {
+                int a = baseTris[f], b = baseTris[f + 1], c = baseTris[f + 2];
+                int ab = SubdivMid(verts, midCache, a, b);
+                int bc = SubdivMid(verts, midCache, b, c);
+                int ca = SubdivMid(verts, midCache, c, a);
+                tris.Add(a); tris.Add(ab); tris.Add(ca);
+                tris.Add(b); tris.Add(bc); tris.Add(ab);
+                tris.Add(c); tris.Add(ca); tris.Add(bc);
+                tris.Add(ab); tris.Add(bc); tris.Add(ca);
+            }
+
+            // Squash to a canopy-ish blob, roughly 2.4 wide × 1.9 tall.
+            for (int i = 0; i < verts.Count; i++)
+            {
+                Vector3 v = verts[i];
+                verts[i] = new Vector3(v.x * 1.2f, v.y * 0.95f, v.z * 1.2f);
+            }
+
+            var mesh = new Mesh();
+            mesh.SetVertices(verts);
+            mesh.SetTriangles(tris, 0);
+            mesh.RecalculateNormals(); // shared verts → smooth rounded shading
+            mesh.RecalculateBounds();
+            CustomCache[key] = mesh;
+            return mesh;
+        }
+
+        private static int SubdivMid(List<Vector3> verts, Dictionary<long, int> cache, int a, int b)
+        {
+            long key = a < b ? ((long)a << 32) | (uint)b : ((long)b << 32) | (uint)a;
+            int idx;
+            if (cache.TryGetValue(key, out idx)) return idx;
+            Vector3 mid = (verts[a] + verts[b]) * 0.5f;
+            idx = verts.Count;
+            verts.Add(mid); // unprojected: keeps the jittered organic feel
+            cache[key] = idx;
+            return idx;
+        }
+
+        /// <summary>
+        /// A soft tree crown: three SmoothCanopy blobs stacked like PineCrown's
+        /// cones, merged. Drop-in replacement for PineCrown with the same
+        /// overall footprint but rounded, soft-shaded foliage.
+        /// </summary>
+        public static Mesh SoftCrown()
+        {
+            const string key = "softcrown";
+            Mesh cached;
+            if (CustomCache.TryGetValue(key, out cached)) return cached;
+            var blob = SmoothCanopy();
+            var meshes = new List<Mesh> { blob, blob, blob };
+            var xforms = new List<Matrix4x4>
+            {
+                Matrix4x4.TRS(new Vector3(0f, 2.4f, 0f), Quaternion.identity, new Vector3(1.9f, 1.5f, 1.9f)),
+                Matrix4x4.TRS(new Vector3(0f, 4.1f, 0f), Quaternion.identity, new Vector3(1.45f, 1.2f, 1.45f)),
+                Matrix4x4.TRS(new Vector3(0f, 5.7f, 0f), Quaternion.identity, new Vector3(1.0f, 0.9f, 1.0f)),
+            };
+            Mesh merged = Merge(meshes, xforms);
+            CustomCache[key] = merged;
+            return merged;
         }
 
         /// <summary>A thin vertical streak (rain), unit-ish height.</summary>

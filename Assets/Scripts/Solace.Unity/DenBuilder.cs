@@ -190,7 +190,7 @@ namespace Solace.Unity
             MeshFactory.AddMesh(root, "PlayHollow", MeshFactory.Disc(2.3f, 12), worn,
                 new Vector3(6.8f, 0.05f, 5.2f), Vector3.one, Quaternion.identity);
             var pebble = MaterialFactory.Lit(new Color(0.50f, 0.48f, 0.45f), 0.5f);
-            var rock = MeshFactory.FacetedRock();
+            var rock = MeshFactory.SmoothRock();
             for (int i = 0; i < 3; i++)
             {
                 float a = rng.NextFloat(0f, Mathf.PI * 2f);
@@ -207,7 +207,7 @@ namespace Solace.Unity
             // Threshold stones flanking the mouth, moss-capped — the den's doorposts.
             var stone = MaterialFactory.Lit(Stone, 0.4f);
             var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.7f, 0.7f);
-            var rock = MeshFactory.FacetedRock();
+            var rock = MeshFactory.SmoothRock();
             foreach (float sx in new float[] { -2.9f, 2.9f })
             {
                 string side = sx < 0 ? "L" : "R";
@@ -228,7 +228,7 @@ namespace Solace.Unity
             var ember = MaterialFactory.LitEmissive(new Color(0.55f, 0.20f, 0.05f),
                                                      new Color(1.0f, 0.42f, 0.10f), 0.5f);
             var moss = MaterialFactory.LitEmissive(new Color(0.10f, 0.30f, 0.22f), MossGlow * 0.7f, 0.7f);
-            var rockMesh = MeshFactory.FacetedRock();
+            var rockMesh = MeshFactory.SmoothRock();
             var rng = SeededRandom.Derive(poi.Id * 7919 + 71, "unity-ember");
 
             // Ring of stones.
@@ -364,7 +364,7 @@ namespace Solace.Unity
         private void BuildCairn(GameObject root, PointOfInterest poi)
         {
             var stone = MaterialFactory.Lit(Stone, 0.35f);
-            var rockMesh = MeshFactory.FacetedRock();
+            var rockMesh = MeshFactory.SmoothRock();
             var rng = SeededRandom.Derive(poi.Id * 7919 + 197, "unity-cairn");
             // Piled stones.
             float y = 0f;
@@ -439,7 +439,7 @@ namespace Solace.Unity
                                                         new Color(0.25f, 0.55f, 0.95f) * 0.9f, 0.15f);
             var crystalB = MaterialFactory.LitEmissive(new Color(0.55f, 0.40f, 0.70f),
                                                         new Color(0.55f, 0.35f, 0.90f) * 0.8f, 0.15f);
-            var rockMesh = MeshFactory.FacetedRock();
+            var rockMesh = MeshFactory.FacetedRock(); // crystals stay crystalline
             var rng = SeededRandom.Derive(poi.Id * 7919 + 397, "unity-crystal");
 
             // Low stone lip around the mouth.
@@ -488,7 +488,7 @@ namespace Solace.Unity
             var stone = MaterialFactory.Lit(Stone, 0.35f);
             var water = MaterialFactory.LitEmissive(new Color(0.15f, 0.45f, 0.50f),
                                                      new Color(0.10f, 0.35f, 0.38f) * 0.6f, 0.25f);
-            var rockMesh = MeshFactory.FacetedRock();
+            var rockMesh = MeshFactory.SmoothRock();
             var rng = SeededRandom.Derive(poi.Id * 7919 + 463, "unity-spring");
 
             // Ring of smooth stones.
@@ -577,7 +577,7 @@ namespace Solace.Unity
             // a different color of the rainbow, humming with light. This should
             // stop Lewis in his tracks when he finds it.
             var rng = SeededRandom.Derive(poi.Id * 7919 + 977, "unity-rainbow");
-            var rockMesh = MeshFactory.FacetedRock();
+            var rockMesh = MeshFactory.FacetedRock(); // rainbow crystals stay crystalline
             // Mossy stone ring at the base.
             var mossStone = MaterialFactory.Lit(new Color(0.25f, 0.35f, 0.22f), 0.5f);
             for (int i = 0; i < 12; i++)
